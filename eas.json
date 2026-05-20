@@ -1,0 +1,28 @@
+{
+  "cli": {
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "preview": {
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "standalone": {
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleRelease"
+      },
+      "developmentClient": false,
+      "distribution": "internal"
+    },
+    "production": {
+      "android": {
+        "buildType": "app-bundle"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

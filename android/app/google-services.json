@@ -1,0 +1,40 @@
+{
+  "project_info": {
+    "project_number": "1008765777858",
+    "firebase_url": "https://gram-bazaar-144b6-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "gram-bazaar-144b6",
+    "storage_bucket": "gram-bazaar-144b6.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1008765777858:android:1f564170169c7fa920c85b",
+        "android_client_info": {
+          "package_name": "com.grambaazar.rider"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1008765777858-8c2bh6027tgbrhg3in7kn90gt49uocta.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA3hD0K8irFlCwrv-BSSMng0I168AXMod4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1008765777858-8c2bh6027tgbrhg3in7kn90gt49uocta.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
