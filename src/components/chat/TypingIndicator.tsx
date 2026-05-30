@@ -19,18 +19,25 @@ export default function TypingIndicator() {
       Animated.timing(slideAnim, { toValue: 0, duration: 300, useNativeDriver: true })
     ]).start();
 
+    let loops: Animated.CompositeAnimation[] = [];
     const animateDot = (dot: Animated.Value, delay: number) => {
-      Animated.loop(
+      const loop = Animated.loop(
         Animated.sequence([
           Animated.timing(dot, { toValue: -6, duration: 375, delay, useNativeDriver: true }),
           Animated.timing(dot, { toValue: 0, duration: 375, useNativeDriver: true })
         ])
-      ).start();
+      );
+      loops.push(loop);
+      loop.start();
     };
 
     animateDot(dot1, 0);
     animateDot(dot2, 140);
     animateDot(dot3, 280);
+
+    return () => {
+      loops.forEach(l => l.stop());
+    };
   }, []);
 
   return (

@@ -27,7 +27,7 @@ export default function CancelledView({ order, onFinish, batchOrders }: any) {
       Animated.spring(boxY, { toValue: 0, tension: 50, friction: 6, delay: 200, useNativeDriver: true })
     ]).start();
 
-    Animated.loop(
+    const loopAnim = Animated.loop(
       Animated.parallel([
         Animated.sequence([
           Animated.timing(pulse, { toValue: 1.6, duration: 2000, useNativeDriver: true }),
@@ -38,7 +38,10 @@ export default function CancelledView({ order, onFinish, batchOrders }: any) {
           Animated.timing(opacity, { toValue: 0.4, duration: 0, useNativeDriver: true }),
         ])
       ])
-    ).start();
+    );
+    loopAnim.start();
+
+    return () => loopAnim.stop();
   }, []);
 
   return (

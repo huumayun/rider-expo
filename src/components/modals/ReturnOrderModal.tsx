@@ -102,7 +102,7 @@ export default function ReturnOrderModal({ order, onClose, onComplete, visible }
                 <View>
                   <Text style={{ fontSize: 18, fontWeight: '800', color: T.text, fontFamily: font }}>{t('return_modal_title') || 'Return Order'}</Text>
                   <Text style={{ fontSize: 10, fontWeight: '700', color: '#f97316', textTransform: 'uppercase', letterSpacing: 1.2 }}>
-                    {lang === 'bn' ? `অর্ডার #${order?.seq || order?.id?.slice(-6)}` : `Order #${order?.seq || order?.id?.slice(-6)}`}
+                    {lang === 'bn' ? `অর্ডার #${order?.id}` : `Order #${order?.id}`}
                   </Text>
                 </View>
               </View>

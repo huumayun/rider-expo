@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Graam Rider",
+    "name": "Rider",
     "slug": "graam-rider",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -65,7 +65,7 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "Allow Graam Rider to use your location for delivery tracking.",
+          "locationAlwaysAndWhenInUsePermission": "Allow Rider to use your location for delivery tracking.",
           "isAndroidBackgroundLocationEnabled": true,
           "isAndroidForegroundServiceEnabled": true
         }
@@ -80,14 +80,14 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow Graam Rider to access photos for delivery proof.",
-          "cameraPermission": "Allow Graam Rider to use camera for delivery proof."
+          "photosPermission": "Allow Rider to access photos for delivery proof.",
+          "cameraPermission": "Allow Rider to use camera for delivery proof."
         }
       ],
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow Graam Rider to access camera."
+          "cameraPermission": "Allow Rider to access camera."
         }
       ],
       "expo-font",

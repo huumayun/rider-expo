@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, Pressable, ScrollView, Animated as RNAnimated, Dimensions, StyleSheet, Modal, Image, ActivityIndicator } from 'react-native';
+import { View, Text, Pressable, ScrollView, Animated as RNAnimated, Dimensions, StyleSheet, Modal, Image, ActivityIndicator, Linking } from 'react-native';
 import { useAuthStore } from '../../store/authStore';
-import { db } from '../../config/firebase';
+import { db, auth } from '../../config/firebase';
+import { updateProfile } from 'firebase/auth';
 import { doc, updateDoc, serverTimestamp, onSnapshot, setDoc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { useRouter, usePathname } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -9,8 +10,10 @@ import {
   User, Phone, Mail, LogOut, MapPin, CheckCircle2, ChevronRight,
   Power, Sun, Moon, Languages, AlertCircle,
   ShoppingBag, Banknote, TrendingUp, Star, ShieldCheck,
-  HelpCircle, MessageSquare, ExternalLink, Info, Bell, Settings
+  HelpCircle, MessageSquare, ExternalLink, Info, Bell, Settings, Camera,
+  Upload
 } from 'lucide-react-native';
+import { useImageUpload } from '../../hooks/useImageUpload';
 import { useApp } from '../../context/AppContext';
 import { useRiderData } from '../../context/RiderDataContext';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -26,8 +29,76 @@ const { width } = Dimensions.get('window');
 export default function ProfilePage() {
   const { rider, setRider } = useAuthStore();
   const router = useRouter();
-  const { theme, lang, t, T, toggleTheme, toggleLang, font, toastEnabled, toggleToast } = useApp();
+  const { theme, lang, t, T, toggleTheme, toggleLang, font, toastEnabled, toggleToast, showToast } = useApp();
   const isDark = theme === 'dark';
+
+  const { pickAndUpload, uploading } = useImageUpload();
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [avatarCacheBuster, setAvatarCacheBuster] = useState<number | null>(null);
+  const [localPhotoUri, setLocalPhotoUri] = useState<string | null>(null);
+
+  const handleUpdateAvatar = async (fromCamera: boolean) => {
+    if (!rider?.uid || uploading) return;
+    try {
+      const storagePath = `users/${rider.uid}/avatar.jpg`;
+      const url = await pickAndUpload(storagePath, { 
+        fromCamera,
+        onLocalUri: (uri) => {
+          setLocalPhotoUri(uri);
+        }
+      });
+      if (url) {
+        if (auth.currentUser) {
+          try {
+            await updateProfile(auth.currentUser, { photoURL: url });
+          } catch (profileErr) {
+            console.error('Error updating Firebase Auth profile:', profileErr);
+          }
+        }
+        const riderRef = doc(db, 'employees', rider.uid);
+        await updateDoc(riderRef, { 
+          photoURL: url,
+          profilePic: url,
+          avatar: url,
+          photo: url
+        });
+        setRider({ 
+          ...rider, 
+          photoURL: url,
+          profilePic: url,
+          avatar: url,
+          photo: url
+        } as any);
+        setAvatarCacheBuster(Date.now());
+        if (showToast) {
+          showToast(
+            lang === 'bn' ? 'সাফল্য' : 'Success',
+            lang === 'bn' ? 'প্রোফাইল ছবি সফলভাবে আপডেট করা হয়েছে!' : 'Profile picture updated successfully!',
+            'success'
+          );
+        }
+      } else {
+        if (showToast) {
+          showToast(
+            lang === 'bn' ? 'ব্যর্থতা' : 'Failed',
+            lang === 'bn' ? 'ছবি আপলোড করা সম্ভব হয়নি' : 'Failed to upload photo',
+            'danger'
+          );
+        }
+      }
+    } catch (error: any) {
+      console.error('Error updating avatar:', error);
+      if (showToast) {
+        showToast(
+          lang === 'bn' ? 'ত্রুটি' : 'Error',
+          error?.message || (lang === 'bn' ? 'ছবি আপলোড করতে ত্রুটি ঘটেছে' : 'Error updating profile picture'),
+          'danger'
+        );
+      }
+    } finally {
+      setShowUploadModal(false);
+    }
+  };
 
   // THEME TRANSITION ANIMATION
   const [isTransitioning, setIsTransitioning] = useState(false);
@@ -140,12 +211,6 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (!rider?.uid) return;
-    const unsubRider = onSnapshot(doc(db, "employees", rider.uid), snap => {
-      if (snap.exists()) {
-        const data = snap.data();
-        setRider({ uid: snap.id, ...data } as any);
-      }
-    });
 
     const q = query(collection(db, 'reviews'), where('rider.riderId', '==', rider.uid));
     const unsubReviews = onSnapshot(q, (snap) => {
@@ -159,10 +224,9 @@ export default function ProfilePage() {
     });
 
     return () => {
-      unsubRider();
       unsubReviews();
     };
-  }, [rider?.uid, setRider]);
+  }, [rider?.uid]);
 
   const isOnline = rider?.dutyStatus === 'online';
 
@@ -295,7 +359,11 @@ export default function ProfilePage() {
             entering={FadeInUp.delay(200).springify()}
             style={{ alignItems: 'center', paddingTop: 60, paddingHorizontal: 20 }}
           >
-            <View style={{ marginBottom: 16, alignItems: 'center', justifyContent: 'center' }}>
+            <Pressable 
+              onPress={() => setShowUploadModal(true)} 
+              disabled={uploading}
+              style={{ marginBottom: 16, alignItems: 'center', justifyContent: 'center' }}
+            >
               <Animated.View style={[{
                 position: 'absolute',
                 width: 140, height: 140, borderRadius: 70,
@@ -308,26 +376,44 @@ export default function ProfilePage() {
                 shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 20, elevation: 5
               }}>
                 <View style={{ width: '100%', height: '100%', borderRadius: 32, overflow: 'hidden', backgroundColor: T.hi, alignItems: 'center', justifyContent: 'center' }}>
-                  {rider?.photoURL ? (
-                    <Image source={{ uri: rider.photoURL }} style={{ width: '100%', height: '100%' }} />
+                  {uploading ? (
+                    <ActivityIndicator size="small" color={T.accent} />
+                  ) : localPhotoUri ? (
+                    <Image source={{ uri: localPhotoUri }} style={{ width: '100%', height: '100%' }} />
+                  ) : (rider?.photoURL || (rider as any)?.profilePic || (rider as any)?.avatar || (rider as any)?.photo) ? (
+                    <Image 
+                      source={{ 
+                        uri: (() => {
+                          const base = rider?.photoURL || (rider as any)?.profilePic || (rider as any)?.avatar || (rider as any)?.photo || '';
+                          if (!avatarCacheBuster) return base;
+                          return base.includes('?') ? `${base}&t=${avatarCacheBuster}` : `${base}?t=${avatarCacheBuster}`;
+                        })(),
+                        cache: 'force-cache'
+                      }} 
+                      style={{ width: '100%', height: '100%' }} 
+                    />
                   ) : (
                     <User size={48} color={isOnline ? '#10b981' : T.sub} strokeWidth={1.5} />
                   )}
                 </View>
               </View>
 
+              {/* Camera edit badge centered at the bottom */}
               <View style={{
-                position: 'absolute', bottom: -4, right: -4, width: 34, height: 34, borderRadius: 12,
-                backgroundColor: isOnline ? '#10b981' : T.sub, borderWidth: 4, borderColor: isDark ? T.surface : '#fff',
+                position: 'absolute', bottom: -6, alignSelf: 'center', width: 34, height: 34, borderRadius: 17,
+                backgroundColor: T.accent, borderWidth: 4, borderColor: isDark ? T.surface : '#fff',
                 alignItems: 'center', justifyContent: 'center', elevation: 4
               }}>
-                <CheckCircle2 size={16} color="#fff" strokeWidth={3} />
+                <Camera size={14} color="#fff" strokeWidth={2.5} />
               </View>
-            </View>
+            </Pressable>
 
-            <Text style={{ fontFamily: font, fontSize: 32, color: T.text, fontWeight: '900', marginBottom: 4 }}>
-              {rider?.name || 'Rider'}
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              <Text style={{ fontFamily: font, fontSize: 32, color: T.text, fontWeight: '900' }}>
+                {rider?.name || 'Rider'}
+              </Text>
+              <CheckCircle2 size={24} color={isOnline ? '#10b981' : T.accent} strokeWidth={2.5} />
+            </View>
 
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 20 }}>
               <View style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)', paddingVertical: 4, paddingHorizontal: 10, borderRadius: 8 }}>
@@ -511,9 +597,25 @@ export default function ProfilePage() {
             </View>
             <View style={{ backgroundColor: T.surface, borderWidth: 1, borderColor: T.border, borderRadius: 26, overflow: 'hidden' }}>
               {[
-                { icon: MessageSquare, label: t('profile_contact_support'), action: () => { } },
-                { icon: ShieldCheck, label: t('profile_privacy_policy'), action: () => { } },
-                { icon: ExternalLink, label: t('profile_terms_service'), action: () => router.push('/(auth)/terms') }
+                { 
+                  icon: MessageSquare, 
+                  label: t('profile_contact_support'), 
+                  action: () => {
+                    Linking.openURL('https://wa.me/8801700000000').catch(err => console.error('Error opening support link:', err));
+                  }
+                },
+                { 
+                  icon: ShieldCheck, 
+                  label: t('profile_privacy_policy'), 
+                  action: () => {
+                    Linking.openURL('https://rider-privacy.example.com').catch(err => console.error('Error opening privacy link:', err));
+                  }
+                },
+                { 
+                  icon: ExternalLink, 
+                  label: t('profile_terms_service'), 
+                  action: () => router.push('/(auth)/terms') 
+                }
               ].map((item, i, arr) => (
                 <View key={i}>
                   <Pressable onPress={item.action} style={({ pressed }) => [{ paddingVertical: 16, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: pressed ? 'rgba(0,0,0,0.02)' : 'transparent' }]}>
@@ -584,6 +686,98 @@ export default function ProfilePage() {
               </LinearGradient>
             </Pressable>
           </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* PHOTO UPLOAD SELECT MODAL */}
+      <Modal visible={showUploadModal} transparent animationType="fade" onRequestClose={() => setShowUploadModal(false)}>
+        <Pressable onPress={() => setShowUploadModal(false)} style={{ flex: 1, backgroundColor: 'rgba(2,6,23,0.75)', justifyContent: 'flex-end', alignItems: 'center' }}>
+          <Animated.View 
+            entering={SlideInDown.duration(250)}
+            style={{ 
+              alignSelf: 'stretch',
+              backgroundColor: isDark ? '#0f172a' : '#ffffff', 
+              borderTopLeftRadius: 32, borderTopRightRadius: 32, 
+              borderWidth: 1, borderColor: T.border,
+              padding: 24, paddingBottom: 46,
+              gap: 20,
+              alignItems: 'center',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: -10 },
+              shadowOpacity: 0.15,
+              shadowRadius: 20,
+              elevation: 25
+            }}
+          >
+            <View style={{ alignItems: 'center', gap: 6, alignSelf: 'stretch' }}>
+              <View style={{ width: 40, height: 5, borderRadius: 2.5, backgroundColor: T.border, marginBottom: 8 }} />
+              <Text style={{ fontSize: 18, fontWeight: '900', color: T.text, fontFamily: font, textTransform: 'uppercase', letterSpacing: 0.5, textAlign: 'center' }}>
+                {lang === 'bn' ? 'প্রোফাইল ছবি পরিবর্তন করুন' : 'Change Profile Photo'}
+              </Text>
+              <Text style={{ fontSize: 12, fontWeight: '600', color: T.sub, fontFamily: font, textAlign: 'center' }}>
+                {lang === 'bn' ? 'নতুন ছবি আপলোড করতে একটি অপশন নির্বাচন করুন' : 'Select an option to upload your new photo'}
+              </Text>
+            </View>
+
+            <View style={{ flexDirection: 'row', gap: 20, justifyContent: 'center', alignItems: 'center', alignSelf: 'stretch' }}>
+              {/* Camera Option */}
+              <Pressable 
+                onPress={() => handleUpdateAvatar(true)}
+                style={({ pressed }) => [{
+                  width: 150,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: isDark ? '#1e293b' : '#f8fafc',
+                  borderWidth: 1, borderColor: T.border,
+                  borderRadius: 24, paddingVertical: 24, paddingHorizontal: 12,
+                  gap: 12, opacity: pressed ? 0.85 : 1,
+                  shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2
+                }]}
+              >
+                <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: `${T.accent}15`, alignItems: 'center', justifyContent: 'center' }}>
+                  <Camera size={26} color={T.accent} strokeWidth={2.5} />
+                </View>
+                <Text style={{ fontSize: 13, fontWeight: '900', color: T.text, fontFamily: font, textAlign: 'center' }}>
+                  {lang === 'bn' ? 'ছবি তুলুন' : 'Take Photo'}
+                </Text>
+              </Pressable>
+
+              {/* Gallery Option */}
+              <Pressable 
+                onPress={() => handleUpdateAvatar(false)}
+                style={({ pressed }) => [{
+                  width: 150,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: isDark ? '#1e293b' : '#f8fafc',
+                  borderWidth: 1, borderColor: T.border,
+                  borderRadius: 24, paddingVertical: 24, paddingHorizontal: 12,
+                  gap: 12, opacity: pressed ? 0.85 : 1,
+                  shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2
+                }]}
+              >
+                <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: 'rgba(59,130,246,0.1)', alignItems: 'center', justifyContent: 'center' }}>
+                  <Upload size={26} color="#3b82f6" strokeWidth={2.5} />
+                </View>
+                <Text style={{ fontSize: 13, fontWeight: '900', color: T.text, fontFamily: font, textAlign: 'center' }}>
+                  {lang === 'bn' ? 'ছবি আপলোড' : 'Photo Upload'}
+                </Text>
+              </Pressable>
+            </View>
+
+            <Pressable 
+              onPress={() => setShowUploadModal(false)}
+              style={({ pressed }) => [{
+                alignSelf: 'stretch', padding: 18, borderRadius: 24,
+                backgroundColor: isDark ? '#334155' : '#e2e8f0',
+                alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.8 : 1
+              }]}
+            >
+              <Text style={{ fontSize: 14, fontWeight: '900', color: '#ef4444', fontFamily: font, textTransform: 'uppercase', letterSpacing: 1.5, textAlign: 'center' }}>
+                {lang === 'bn' ? 'বাতিল' : 'Cancel'}
+              </Text>
+            </Pressable>
+          </Animated.View>
         </Pressable>
       </Modal>
 

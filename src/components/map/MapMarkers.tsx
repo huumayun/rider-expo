@@ -1,36 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, Animated } from 'react-native';
 import { Marker } from 'react-native-maps';
-import { Building2 } from 'lucide-react-native';
-
-const PulsingAura = () => {
-  const pulse = useRef(new Animated.Value(1)).current;
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, { toValue: 1.6, duration: 2000, useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 1, duration: 0, useNativeDriver: true }),
-      ])
-    ).start();
-  }, []);
-
-  return (
-    <Animated.View
-      style={{
-        position: 'absolute',
-        width: 24,
-        height: 24,
-        borderRadius: 12,
-        backgroundColor: 'rgba(66, 133, 244, 0.25)',
-        transform: [{ scale: pulse }],
-        opacity: pulse.interpolate({
-          inputRange: [1, 1.6],
-          outputRange: [0.6, 0]
-        })
-      }}
-    />
-  );
-};
+import { Building2, Navigation } from 'lucide-react-native';
 
 export const RiderMarker = React.memo(({ pos, heading, accent }: any) => {
   const plat = pos?.lat || pos?.latitude;
@@ -45,47 +16,11 @@ export const RiderMarker = React.memo(({ pos, heading, accent }: any) => {
       flat={true}
       rotation={heading || 0}
       zIndex={999}
-      tracksViewChanges={true}
     >
-      <View style={{
-        width: 100,
-        height: 100,
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: 'transparent',
-        overflow: 'visible'
-      }}>
-        <PulsingAura />
-
-        {/* Directional Beam - Subtle */}
-        <View
-          style={{
-            position: 'absolute',
-            width: 0,
-            height: 0,
-            borderLeftWidth: 7,
-            borderRightWidth: 7,
-            borderBottomWidth: 20,
-            borderLeftColor: 'transparent',
-            borderRightColor: 'transparent',
-            borderBottomColor: 'rgba(66, 133, 244, 0.4)',
-            transform: [{ translateY: -12 }]
-          }}
-        />
-
-        {/* Main Blue Dot - Smaller Radius */}
-        <View style={{
-          width: 14,
-          height: 14,
-          borderRadius: 7,
-          backgroundColor: '#4285F4',
-          borderWidth: 2,
-          borderColor: '#fff',
-          alignItems: 'center',
-          justifyContent: 'center'
-        }}>
-          <View style={{ width: 3, height: 3, borderRadius: 1.5, backgroundColor: '#fff', opacity: 0.6 }} />
-        </View>
+      <View style={{ width: 80, height: 80, alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent' }}>
+        <Navigation color="#ffffff" fill="#3b82f6" size={38} strokeWidth={2.5} style={{
+          shadowColor: '#000', shadowOpacity: 0.5, shadowRadius: 8, elevation: 10,
+        }} />
       </View>
     </Marker>
   );
@@ -94,16 +29,21 @@ export const RiderMarker = React.memo(({ pos, heading, accent }: any) => {
 export const OrderMarker = React.memo(({ pos, color, label, isSelected, onClick, isNear, isNew, lang }: any) => {
   const pulse = useRef(new Animated.Value(1)).current;
   useEffect(() => {
+    let anim: Animated.CompositeAnimation | null = null;
     if (isNear) {
-      Animated.loop(
+      anim = Animated.loop(
         Animated.sequence([
           Animated.timing(pulse, { toValue: 1.35, duration: 600, useNativeDriver: true }),
           Animated.timing(pulse, { toValue: 1, duration: 600, useNativeDriver: true }),
         ])
-      ).start();
+      );
+      anim.start();
     } else {
       pulse.setValue(1);
     }
+    return () => {
+      if (anim) anim.stop();
+    };
   }, [isNear]);
 
   return (
@@ -111,7 +51,6 @@ export const OrderMarker = React.memo(({ pos, color, label, isSelected, onClick,
       coordinate={{ latitude: Number(pos.lat), longitude: Number(pos.lng) }}
       onPress={onClick}
       anchor={{ x: 0.5, y: 1 }}
-      tracksViewChanges={false}
     >
       <View style={{ alignItems: 'center', paddingBottom: 0 }}>
         {isNew && (
@@ -150,7 +89,6 @@ export const BranchMarker = React.memo(({ pos, name, T }: any) => (
   <Marker
     coordinate={{ latitude: Number(pos.lat), longitude: Number(pos.lng) }}
     anchor={{ x: 0.5, y: 1 }}
-    tracksViewChanges={false}
   >
     <View style={{ alignItems: 'center' }}>
       <View style={{

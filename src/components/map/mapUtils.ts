@@ -99,3 +99,67 @@ const getClosestPointOnSegment = (px: number, py: number, x1: number, y1: number
 
   return { lat: x1 + t * dx, lng: y1 + t * dy };
 };
+
+export const darkMapStyle = [
+  { "elementType": "geometry", "stylers": [{ "color": "#242f3e" }] },
+  { "elementType": "labels.text.fill", "stylers": [{ "color": "#746855" }] },
+  { "elementType": "labels.text.stroke", "stylers": [{ "color": "#242f3e" }] },
+  { "featureType": "administrative.locality", "elementType": "labels.text.fill", "stylers": [{ "color": "#d59563" }] },
+  { "featureType": "poi", "elementType": "labels.text.fill", "stylers": [{ "color": "#d59563" }] },
+  { "featureType": "poi.park", "elementType": "geometry", "stylers": [{ "color": "#263c3f" }] },
+  { "featureType": "poi.park", "elementType": "labels.text.fill", "stylers": [{ "color": "#6b9a76" }] },
+  { "featureType": "road", "elementType": "geometry", "stylers": [{ "color": "#38414e" }] },
+  { "featureType": "road", "elementType": "geometry.stroke", "stylers": [{ "color": "#212a37" }] },
+  { "featureType": "road", "elementType": "labels.text.fill", "stylers": [{ "color": "#9ca5b3" }] },
+  { "featureType": "road.highway", "elementType": "geometry", "stylers": [{ "color": "#746855" }] },
+  { "featureType": "road.highway", "elementType": "geometry.stroke", "stylers": [{ "color": "#1f2835" }] },
+  { "featureType": "road.highway", "elementType": "labels.text.fill", "stylers": [{ "color": "#f3d19c" }] },
+  { "featureType": "transit", "elementType": "geometry", "stylers": [{ "color": "#2f3948" }] },
+  { "featureType": "transit.station", "elementType": "labels.text.fill", "stylers": [{ "color": "#d59563" }] },
+  { "featureType": "water", "elementType": "geometry", "stylers": [{ "color": "#17263c" }] },
+  { "featureType": "water", "elementType": "labels.text.fill", "stylers": [{ "color": "#515c6d" }] },
+  { "featureType": "water", "elementType": "labels.text.stroke", "stylers": [{ "color": "#17263c" }] }
+];
+
+export const translateInstruction = (instruction: string, lang: string) => {
+  if (!instruction || lang !== 'bn') return instruction;
+
+  let bn = instruction;
+
+  // 1. Core turn directions
+  bn = bn.replace(/Turn left/i, 'বামে মোড় নিন');
+  bn = bn.replace(/Turn right/i, 'ডানে মোড় নিন');
+  bn = bn.replace(/Keep left/i, 'বামে থাকুন');
+  bn = bn.replace(/Keep right/i, 'ডানে থাকুন');
+  bn = bn.replace(/Slight left/i, 'সামান্য বামে যান');
+  bn = bn.replace(/Slight right/i, 'সামান্য ডানে যান');
+  bn = bn.replace(/Sharp left/i, 'তীক্ষ্ণ বামে মোড় নিন');
+  bn = bn.replace(/Sharp right/i, 'তীক্ষ্ণ ডানে মোড় নিন');
+  
+  // 2. Roundabout exits
+  bn = bn.replace(/At the roundabout, take the (\d+)(st|nd|rd|th) exit/i, (_, exit) => {
+    return `গোলচত্বরে পৌঁছে ${exit} নম্বর এক্সিট দিয়ে বের হন`;
+  });
+  bn = bn.replace(/At the roundabout, continue straight/i, 'গোলচত্বর দিয়ে সোজা এগিয়ে যান');
+
+  // 3. General movements
+  bn = bn.replace(/Head northwest/i, 'উত্তর-পশ্চিম দিকে এগিয়ে যান');
+  bn = bn.replace(/Head northeast/i, 'উত্তর-পূর্ব দিকে এগিয়ে যান');
+  bn = bn.replace(/Head southwest/i, 'দক্ষিণ-পশ্চিম দিকে এগিয়ে যান');
+  bn = bn.replace(/Head southeast/i, 'দক্ষিণ-পূর্ব দিকে এগিয়ে যান');
+  bn = bn.replace(/Head north/i, 'উত্তর দিকে এগিয়ে যান');
+  bn = bn.replace(/Head south/i, 'দক্ষিণ দিকে এগিয়ে যান');
+  bn = bn.replace(/Head east/i, 'পূর্ব দিকে এগিয়ে যান');
+  bn = bn.replace(/Head west/i, 'পশ্চিম দিকে এগিয়ে যান');
+  bn = bn.replace(/Go straight/i, 'সোজা যান');
+  bn = bn.replace(/Continue straight/i, 'সোজা এগিয়ে যান');
+  bn = bn.replace(/Continue/i, 'এগিয়ে যান');
+  
+  // 4. Prepositions / Junctions
+  bn = bn.replace(/onto/i, 'এ');
+  bn = bn.replace(/toward/i, 'এর দিকে');
+  bn = bn.replace(/Merge/i, 'মিলিত হন');
+  bn = bn.replace(/Take the ramp/i, 'র‌্যাম্পে উঠুন');
+
+  return bn;
+};

@@ -8,9 +8,10 @@ import { db } from '../config/firebase';
 interface UseNotificationsOptions {
   uid: string | undefined;
   onForeground?: (title: string, body: string, type: string | null) => void;
+  onNotificationTap?: (type: string | null, data: any) => void;
 }
 
-export function useNotifications({ uid, onForeground }: UseNotificationsOptions) {
+export function useNotifications({ uid, onForeground, onNotificationTap }: UseNotificationsOptions) {
   const listenerRef = useRef<Notifications.Subscription | null>(null);
   const responseRef = useRef<Notifications.Subscription | null>(null);
 
@@ -71,8 +72,10 @@ export function useNotifications({ uid, onForeground }: UseNotificationsOptions)
     });
 
     // Background tap → foreground handler
-    responseRef.current = Notifications.addNotificationResponseReceivedListener((_response) => {
-      // Navigation from notification response handled in _layout.tsx via router
+    responseRef.current = Notifications.addNotificationResponseReceivedListener((response) => {
+      const type = response.notification.request.content.data?.type as string ?? null;
+      const data = response.notification.request.content.data ?? {};
+      if (onNotificationTap) onNotificationTap(type, data);
     });
 
     return () => {

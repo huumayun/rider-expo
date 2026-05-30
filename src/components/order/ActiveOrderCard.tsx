@@ -41,7 +41,7 @@ export default function ActiveOrderCard({ order, onPress }: Props) {
       })
     ]).start();
 
-    Animated.loop(
+    const loopAnim = Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, {
           toValue: 0.3,
@@ -54,7 +54,10 @@ export default function ActiveOrderCard({ order, onPress }: Props) {
           useNativeDriver: true,
         })
       ])
-    ).start();
+    );
+    loopAnim.start();
+
+    return () => loopAnim.stop();
   }, []);
 
   if (!order) return null;
@@ -132,7 +135,7 @@ export default function ActiveOrderCard({ order, onPress }: Props) {
             </Text>
           </View>
           <Text style={{ fontSize: 9, fontWeight: '700', color: T.sub, fontFamily: 'monospace' }}>
-            #{order.id?.slice(-6)}
+            #{order.id}
           </Text>
         </View>
 

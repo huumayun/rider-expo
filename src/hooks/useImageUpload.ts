@@ -5,7 +5,10 @@ import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage
 import { storage } from '../config/firebase';
 
 interface UseImageUploadReturn {
-  pickAndUpload: (storagePath: string, options?: { fromCamera?: boolean }) => Promise<string | null>;
+  pickAndUpload: (
+    storagePath: string,
+    options?: { fromCamera?: boolean; onLocalUri?: (uri: string) => void }
+  ) => Promise<string | null>;
   uploading: boolean;
   uploadError: string | null;
   clearError: () => void;
@@ -17,7 +20,7 @@ export function useImageUpload(): UseImageUploadReturn {
 
   const pickAndUpload = useCallback(async (
     storagePath: string,
-    options?: { fromCamera?: boolean }
+    options?: { fromCamera?: boolean; onLocalUri?: (uri: string) => void }
   ): Promise<string | null> => {
     setUploadError(null);
 
@@ -31,9 +34,9 @@ export function useImageUpload(): UseImageUploadReturn {
           return null;
         }
         result = await ImagePicker.launchCameraAsync({
-          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          mediaTypes: 'images',
           quality: 0.85,
-          allowsEditing: false,
+          allowsEditing: true,
         });
       } else {
         const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -42,8 +45,9 @@ export function useImageUpload(): UseImageUploadReturn {
           return null;
         }
         result = await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          mediaTypes: 'images',
           quality: 0.85,
+          allowsEditing: true,
           allowsMultipleSelection: false,
         });
       }
@@ -58,6 +62,10 @@ export function useImageUpload(): UseImageUploadReturn {
         [{ resize: { width: 900 } }],
         { compress: 0.75, format: ImageManipulator.SaveFormat.JPEG }
       );
+
+      if (options?.onLocalUri) {
+        options.onLocalUri(compressed.uri);
+      }
 
       setUploading(true);
       const response = await fetch(compressed.uri);

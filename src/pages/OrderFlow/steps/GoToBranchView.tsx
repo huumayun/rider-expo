@@ -1,14 +1,124 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { View, Text, Pressable, ScrollView, Animated, Dimensions, PanResponder, Linking } from 'react-native';
-import { MapPin, Phone, Package, Banknote, CornerUpLeft, CornerUpRight, ArrowUp, Compass, Store, Navigation, Truck } from 'lucide-react-native';
+import ReAnimated, { FadeInRight, FadeOutRight, useSharedValue, useAnimatedStyle, withDelay, withRepeat, withSequence, withTiming, FadeIn, FadeOut } from 'react-native-reanimated';
+import { MapPin, Phone, Package, Banknote, CornerUpLeft, CornerUpRight, ArrowUp, Compass, Store, Navigation, Truck, ChevronLeft, ChevronRight, ChevronUp, ArrowUpLeft, ArrowUpRight } from 'lucide-react-native';
 import { LargeTurnIndicator } from '../../../components/map/LargeTurnIndicator';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../../../context/AppContext';
 import RouteOverviewMap from '../../../components/map/RouteOverviewMap';
+import { translateInstruction } from '../../../components/map/mapUtils';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const SNAP_EXPANDED = SCREEN_HEIGHT * 0.38;
-const SNAP_COLLAPSED = SCREEN_HEIGHT * 0.88;
+
+const ChevronTurnIndicator = React.memo(({ direction }: { direction: 'left' | 'right' | 'straight' }) => {
+  const activeColor = '#fff'; // Standard clean white static arrow like Google Maps
+
+  if (direction === 'left') {
+    return <ChevronLeft size={36} color={activeColor} strokeWidth={4.5} />;
+  }
+
+  if (direction === 'right') {
+    return <ChevronRight size={36} color={activeColor} strokeWidth={4.5} />;
+  }
+
+  return <ChevronUp size={36} color={activeColor} strokeWidth={4.5} />;
+});
+
+const getTurnDirection = (maneuver: string | undefined, instruction: string) => {
+  const instr = (instruction || '').toLowerCase();
+  if (maneuver?.includes('left') || instr.includes('left') || instr.includes('বামে')) {
+    return 'left';
+  }
+  if (maneuver?.includes('right') || instr.includes('right') || instr.includes('ডানে')) {
+    return 'right';
+  }
+  return 'straight';
+};
+
+const LiveDot = React.memo(() => {
+  const pulse = useSharedValue(0.5);
+
+  useEffect(() => {
+    pulse.value = withRepeat(
+      withSequence(
+        withTiming(1, { duration: 800 }),
+        withTiming(0.4, { duration: 800 })
+      ),
+      -1,
+      true
+    );
+  }, []);
+
+  const dotStyle = useAnimatedStyle(() => {
+    return {
+      opacity: pulse.value,
+      transform: [{ scale: 0.8 + pulse.value * 0.4 }]
+    };
+  });
+
+  return (
+    <ReAnimated.View style={[{
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+      backgroundColor: '#22c55e',
+      marginRight: 6,
+    }, dotStyle]} />
+  );
+});
+const LaneGuidance = React.memo(({ nextStep }: { nextStep: any }) => {
+  const isLeft = nextStep?.maneuver?.includes('left') || nextStep?.instruction?.toLowerCase().includes('left') || nextStep?.instruction?.includes('বামে');
+  const isRight = nextStep?.maneuver?.includes('right') || nextStep?.instruction?.toLowerCase().includes('right') || nextStep?.instruction?.includes('ডানে');
+  const rawDist = nextStep?.rawDist;
+  const isClose = rawDist !== undefined && rawDist <= 0.15; // Show within 150 meters
+
+  if (!isClose) return null;
+
+  return (
+    <View style={{
+      backgroundColor: 'transparent',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingVertical: 4,
+      zIndex: 10,
+    }}>
+      <Text style={{ color: 'rgba(255, 255, 255, 0.7)', fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+        Lanes:
+      </Text>
+      <View style={{ flexDirection: 'row', gap: 5 }}>
+        {isLeft ? (
+          <>
+            <View style={{ width: 22, height: 22, borderRadius: 5, backgroundColor: '#22c55e', alignItems: 'center', justifyContent: 'center' }}>
+              <ArrowUpLeft size={14} color="#fff" strokeWidth={3.5} />
+            </View>
+            <View style={{ width: 22, height: 22, opacity: 0.35, alignItems: 'center', justifyContent: 'center' }}>
+              <ArrowUp size={14} color="#fff" strokeWidth={3} />
+            </View>
+          </>
+        ) : isRight ? (
+          <>
+            <View style={{ width: 22, height: 22, opacity: 0.35, alignItems: 'center', justifyContent: 'center' }}>
+              <ArrowUp size={14} color="#fff" strokeWidth={3} />
+            </View>
+            <View style={{ width: 22, height: 22, borderRadius: 5, backgroundColor: '#22c55e', alignItems: 'center', justifyContent: 'center' }}>
+              <ArrowUpRight size={14} color="#fff" strokeWidth={3.5} />
+            </View>
+          </>
+        ) : (
+          <>
+            <View style={{ width: 22, height: 22, borderRadius: 5, backgroundColor: '#22c55e', alignItems: 'center', justifyContent: 'center' }}>
+              <ArrowUp size={14} color="#fff" strokeWidth={3.5} />
+            </View>
+          </>
+        )}
+      </View>
+    </View>
+  );
+});
+
+
 
 export default React.memo(function GoToBranchView({ 
   order, 
@@ -22,16 +132,58 @@ export default React.memo(function GoToBranchView({
   orderStatus,
   branchData,
   routeDestination,
-  heading
+  heading,
+  mapTouchTime
 }: any) {
   const { T, theme, lang, font } = useApp();
   const insets = useSafeAreaInsets();
-  const [collapsed, setCollapsed] = useState(false);
+  
+  const isNavMode = orderStatus === 'go_to_branch' || isNavigating;
+  const SNAP_COLLAPSED = isNavMode ? (SCREEN_HEIGHT + 100) : (SCREEN_HEIGHT - 160);
+
+  const getCompassDirection = (h: number, l: string) => {
+    const isBn = l === 'bn';
+    const dirs = isBn 
+      ? ['উত্তরে', 'উত্তর-পূর্বে', 'পূর্বে', 'দক্ষিণ-পূর্বে', 'দক্ষিণে', 'দক্ষিণ-পশ্চিমে', 'পশ্চিমে', 'উত্তর-পশ্চিমে']
+      : ['North', 'Northeast', 'East', 'Southeast', 'South', 'Southwest', 'West', 'Northwest'];
+    const idx = Math.round(((h %= 360) < 0 ? h + 360 : h) / 45) % 8;
+    return isBn ? `${dirs[idx]} যান` : `Head ${dirs[idx]}`;
+  };
+
+  const getBannerInstructions = () => {
+    const headingDirection = getCompassDirection(heading || 0, lang);
+    const nextInstruction = translateInstruction(routeInfo.nextStep?.instruction || '', lang);
+    const distanceToTurn = routeInfo.nextStep?.rawDist || 0; // in km
+
+    // If we are far from the next turn (>= 100m) or there's no turn yet, tell rider to continue in current compass direction
+    if (distanceToTurn >= 0.1 || !routeInfo.nextStep?.instruction) {
+      return {
+        main: headingDirection,
+        sub: routeInfo.nextStep?.instruction 
+          ? (lang === 'bn' ? `তারপর ${nextInstruction}` : `Then ${routeInfo.nextStep.instruction}`)
+          : null
+      };
+    } else {
+      // If we are very close to the turn (< 100m), show the turn maneuver in large text!
+      return {
+        main: nextInstruction,
+        sub: lang === 'bn' ? 'তারপর সোজা চলুন' : 'Then head straight'
+      };
+    }
+  };
+  const [collapsed, setCollapsed] = useState(isNavMode);
+  const [showFab, setShowFab] = useState(true);
+
+  useEffect(() => {
+    setShowFab(true);
+    const timer = setTimeout(() => {
+      setShowFab(false);
+    }, 2500);
+    return () => clearTimeout(timer);
+  }, [mapTouchTime, collapsed]);
   
   const sheetY = useRef(new Animated.Value(SNAP_EXPANDED)).current;
   const hasAutoNavigated = useRef(false);
-
-  const isNavMode = orderStatus === 'go_to_branch';
 
   const isDark = theme === 'dark';
   const cardBg = T.bg;
@@ -40,9 +192,6 @@ export default React.memo(function GoToBranchView({
   const brd = T.border;
   const rowBg = T.hi;
 
-  // ─── STATE ─────────────────────────────────────────────────────────────────
-  const [distance, setDistance] = useState('--');
-  const [duration, setDuration] = useState('--');
 
   // Auto-collapse sheet when entering go_to_branch
   useEffect(() => {
@@ -114,212 +263,213 @@ export default React.memo(function GoToBranchView({
   return (
     <View style={{ flex: 1, backgroundColor: 'transparent' }} pointerEvents="box-none">
 
-      {/* ── STATIC OVERVIEW MAP (assigned/accepted only) ── */}
-      {!isNavMode && (
-        <View style={{ position: 'absolute', inset: 0 }}>
-          <RouteOverviewMap
-            assignedOrders={ordersList}
-            branches={{ [branch.id || order.branchId]: branch }}
-            minimal={true}
-            routeOrigin={riderLocation ? { latitude: riderLocation.lat, longitude: riderLocation.lng } : undefined}
-            routeDestination={routeDestination ? { latitude: routeDestination.lat, longitude: routeDestination.lng } : undefined}
-            accentColor={T.accent}
-            navigationMode={false}
-            livePos={riderLocation}
-            heading={heading || 0}
-            currentStatus={orderStatus}
-            branchLocation={branch?.location ? { latitude: Number(branch.location.lat), longitude: Number(branch.location.lng) } : undefined}
-            customerDestinations={ordersList.map((o: any) => {
-              const loc = o.customer?.location || o.customer?.address;
-              return loc?.lat ? { latitude: Number(loc.lat), longitude: Number(loc.lng) } : null;
-            }).filter(Boolean)}
-            onRouteReady={(info: any) => {
-              if (info?.distance) setDistance(info.distance);
-              if (info?.duration) setDuration(info.duration);
-            }}
-          />
-        </View>
-      )}
+
 
       {/* ── LARGE TURN INDICATOR (go_to_branch only) ── */}
       {isNavMode && (
         <LargeTurnIndicator
           nextStep={routeInfo.nextStep}
-          isVisible={isNavigating && routeInfo.nextStep?.rawDist < 0.1}
+          isVisible={isNavigating && collapsed && followMode && routeInfo.nextStep?.rawDist < 0.1}
         />
       )}
 
-      {/* ── NAVIGATION HEADER (go_to_branch only) ── */}
+      {/* ── GOOGLE MAPS STYLE NAVIGATION HEADER (go_to_branch only) ── */}
       {isNavMode && (
         <Animated.View style={{
           position: 'absolute',
           top: insets.top + 10,
           left: 12, right: 12,
-          height: 70,
-          backgroundColor: isDark ? 'rgba(20,20,30,0.95)' : 'rgba(255,255,255,0.97)',
-          borderRadius: 20,
-          flexDirection: 'row',
-          alignItems: 'center',
-          paddingHorizontal: 14,
-          borderWidth: 1,
-          borderColor: brd,
-          shadowColor: '#000',
-          shadowOpacity: 0.2,
-          shadowRadius: 16,
-          elevation: 12,
           zIndex: 100,
-          gap: 10
         }}>
-          {/* Compass / Re-center button */}
-          <Pressable
-            onPress={() => {
-              if (!isNavigating) setIsNavigating(true);
-              else setIsNavigating(true, true);
-            }}
-            style={{
-              width: 46, height: 46, borderRadius: 14,
-              backgroundColor: (isNavigating && followMode) ? '#ff4d6d' : T.accent,
-              alignItems: 'center', justifyContent: 'center',
-              shadowColor: (isNavigating && followMode) ? '#ff4d6d' : T.accent,
-              shadowOpacity: 0.35, shadowRadius: 8,
-              borderWidth: (isNavigating && !followMode) ? 2 : 0,
-              borderColor: '#fff'
-            }}
-          >
-            <Compass size={22} color="#fff" strokeWidth={2.5} />
-          </Pressable>
-
-          {/* Next Turn */}
-          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <View style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center' }}>
-              {routeInfo.nextStep?.maneuver?.includes('left') ? (
-                <CornerUpLeft size={26} color={T.green} strokeWidth={2.5} />
-              ) : routeInfo.nextStep?.maneuver?.includes('right') ? (
-                <CornerUpRight size={26} color={T.green} strokeWidth={2.5} />
-              ) : (
-                <ArrowUp size={26} color={T.green} strokeWidth={2.5} />
-              )}
+          {/* Main Instruction Banner */}
+          <View style={{
+            backgroundColor: '#0A4A40', // Deep green like Google Maps
+            borderRadius: 16,
+            paddingVertical: 18,
+            paddingHorizontal: 20,
+            flexDirection: 'row',
+            alignItems: 'center',
+            shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 10, elevation: 8,
+          }}>
+            <View style={{ marginRight: 16 }}>
+              <ChevronTurnIndicator 
+                direction={getTurnDirection(
+                  routeInfo.nextStep?.maneuver,
+                  routeInfo.nextStep?.instruction || ''
+                )} 
+              />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={{
-                fontSize: 10, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1,
-                color: routeInfo.nextStep?.rawDist < 0.1 ? '#ef4444' : routeInfo.nextStep?.rawDist < 0.25 ? '#f97316' : T.green
-              }}>
-                {routeInfo.nextStep?.distance || '--'} {lang === 'bn' ? 'পর' : 'left'}
+              <Text style={{ fontSize: 20, fontWeight: '800', color: '#fff', letterSpacing: 0.5 }}>
+                {getBannerInstructions().main}
               </Text>
-              <Text numberOfLines={1} style={{ fontSize: 14, fontWeight: '800', color: txt }}>
-                {routeInfo.nextStep?.instruction || (lang === 'bn' ? 'সরাসরি যান' : 'Go Straight')}
-              </Text>
+              {getBannerInstructions().sub ? (
+                <Text style={{ fontSize: 14, fontWeight: '600', color: '#a7f3d0', marginTop: 3 }}>
+                  {getBannerInstructions().sub}
+                </Text>
+              ) : null}
             </View>
+            {routeInfo?.duration ? (
+              <View style={{ alignItems: 'flex-end', borderLeftWidth: 1, borderLeftColor: 'rgba(255,255,255,0.2)', paddingLeft: 12 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <LiveDot />
+                  <Text style={{ fontSize: 18, fontWeight: '800', color: '#fff' }}>{routeInfo.duration.replace('mins', 'min')}</Text>
+                </View>
+                <Text style={{ fontSize: 12, fontWeight: '600', color: '#a7f3d0', marginTop: 2 }}>{routeInfo.distance}</Text>
+              </View>
+            ) : null}
           </View>
 
-          <View style={{ width: 1, height: 28, backgroundColor: brd }} />
+          {/* Lanes & Secondary Next Turn Preview Container */}
+          <View style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: 'transparent',
+            marginTop: 4,
+            paddingLeft: 8,
+            gap: 8,
+          }}>
+            {/* Secondary Next Turn Preview */}
+            {routeInfo.nextStep?.rawDist < 1 && (
+              <View style={{
+                backgroundColor: 'rgba(7, 51, 43, 0.85)', // Deep green dark transparent pill
+                borderRadius: 12,
+                paddingVertical: 6,
+                paddingHorizontal: 12,
+                flexDirection: 'row',
+                alignItems: 'center',
+                shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 4, elevation: 3,
+              }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: '#fff', marginRight: 8 }}>Then</Text>
+                <CornerUpLeft size={14} color="#fff" strokeWidth={3} />
+              </View>
+            )}
 
-          {/* ETA + Distance */}
-          <View style={{ alignItems: 'flex-end', minWidth: 46 }}>
-            <Text style={{ fontSize: 7, fontWeight: '900', color: sub, textTransform: 'uppercase', marginBottom: 1 }}>
-              {routeInfo.duration}
-            </Text>
-            <Text style={{ fontSize: 11, fontWeight: '900', color: T.accent }}>
-              {routeInfo.distance}
-            </Text>
+            {/* Lane Guidance (transparent) */}
+            <LaneGuidance nextStep={routeInfo.nextStep} />
           </View>
+
+
         </Animated.View>
       )}
 
-      {/* ── STAT PILLS (visible when sheet is up, for assigned/accepted) ── */}
-      {!isNavMode && !collapsed && (
-        <Animated.View style={{
-          position: 'absolute',
-          top: sheetY,
-          transform: [{ translateY: -72 }],
-          left: 16, right: 16,
-          flexDirection: 'row',
-          justifyContent: 'space-between',
-          zIndex: 20,
-        }} pointerEvents="none">
-          <View style={{
-            backgroundColor: cardBg, borderWidth: 1, borderColor: brd, borderRadius: 16,
-            paddingVertical: 10, paddingHorizontal: 16,
-            shadowColor: '#000', shadowOpacity: isDark ? 0.5 : 0.08, shadowRadius: 16, elevation: 8,
-          }}>
-            <Text style={{ fontSize: 7, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1.5, color: T.accent, marginBottom: 2 }}>
-              {lang === 'bn' ? 'দূরত্ব' : 'Distance'}
-            </Text>
-            <Text style={{ fontFamily: font, fontSize: 22, color: txt, lineHeight: 24 }}>
-              {distance}
-            </Text>
-          </View>
-          <View style={{
-            backgroundColor: cardBg, borderWidth: 1, borderColor: brd, borderRadius: 16,
-            paddingVertical: 10, paddingHorizontal: 16, alignItems: 'flex-end',
-            shadowColor: '#000', shadowOpacity: isDark ? 0.5 : 0.08, shadowRadius: 16, elevation: 8,
-          }}>
-            <Text style={{ fontSize: 7, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1.5, color: sub, marginBottom: 2 }}>
-              {lang === 'bn' ? 'আনুমানিক সময়' : 'Est. Time'}
-            </Text>
-            <Text style={{ fontFamily: font, fontSize: 22, color: txt, lineHeight: 24 }}>
-              {duration}
-            </Text>
-          </View>
-        </Animated.View>
-      )}
 
-      {/* ── COLLAPSED QUICK-EXPAND BUTTON ── */}
-      {collapsed && (
-        <Animated.View style={{
+
+
+
+      {/* ── FIXED QUICK-EXPAND BUTTON ── */}
+      {collapsed && showFab && (
+        <ReAnimated.View 
+          entering={FadeInRight.duration(300)}
+          exiting={FadeOutRight.duration(300)}
+          style={{
           position: 'absolute',
-          top: sheetY,
-          transform: [{ translateY: -64 }],
-          left: 0, right: 0,
-          alignItems: 'center',
+          bottom: 110, // Safely above the bottom action footer
+          right: 16,
           zIndex: 20,
         }}>
           <Pressable 
             onPress={toggleSheet}
             style={{
-              backgroundColor: isDark ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.8)',
+              backgroundColor: isDark ? 'rgba(30,30,45,0.95)' : 'rgba(255,255,255,0.95)',
               borderWidth: 1, borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
               borderRadius: 30,
-              paddingVertical: 10, paddingHorizontal: 20,
-              flexDirection: 'row', alignItems: 'center', gap: 8,
+              paddingVertical: 12, paddingHorizontal: 16, // slightly less horizontal padding to save space
+              flexDirection: 'row', alignItems: 'center', gap: 6,
+              shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 10, elevation: 8,
             }}
           >
-            <ArrowUp size={16} color={txt} strokeWidth={3} />
-            <Text style={{ fontSize: 12, fontWeight: '800', color: txt, textTransform: 'uppercase', letterSpacing: 1 }}>
+            <ArrowUp size={18} color={txt} strokeWidth={3} />
+            <Text style={{ fontSize: 13, fontWeight: '900', color: txt, textTransform: 'uppercase', letterSpacing: 1 }}>
               {lang === 'bn' ? 'অর্ডার বিস্তারিত' : 'Order Details'}
             </Text>
           </Pressable>
+        </ReAnimated.View>
+      )}
+
+      {/* ── STAT PILLS (assigned/accepted overview only) ── */}
+      {!isNavMode && (
+        <Animated.View style={{
+          position: 'absolute',
+          top: Animated.subtract(sheetY, 82),
+          left: 16, right: 16,
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          zIndex: 20,
+          pointerEvents: 'none',
+        }}>
+          <View style={{ 
+            backgroundColor: isDark ? 'rgba(30,30,45,0.95)' : 'rgba(255,255,255,0.95)', 
+            borderWidth: 1, 
+            borderColor: brd, 
+            borderRadius: 16, 
+            paddingVertical: 10, 
+            paddingHorizontal: 16, 
+            shadowColor: '#000', 
+            shadowOpacity: 0.1, 
+            shadowRadius: 10, 
+            elevation: 5 
+          }}>
+            <Text style={{ fontSize: 8, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1.5, color: T.accent, marginBottom: 2 }}>
+              {lang === 'bn' ? 'মোট দূরত্ব' : 'TOTAL DISTANCE'}
+            </Text>
+            <Text style={{ fontSize: 20, fontWeight: '900', color: txt }}>
+              {routeInfo?.distance || '--'}
+            </Text>
+          </View>
+          <View style={{ 
+            backgroundColor: isDark ? 'rgba(30,30,45,0.95)' : 'rgba(255,255,255,0.95)', 
+            borderWidth: 1, 
+            borderColor: brd, 
+            borderRadius: 16, 
+            paddingVertical: 10, 
+            paddingHorizontal: 16, 
+            alignItems: 'flex-end', 
+            shadowColor: '#000', 
+            shadowOpacity: 0.1, 
+            shadowRadius: 10, 
+            elevation: 5 
+          }}>
+            <Text style={{ fontSize: 8, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1.5, color: sub, marginBottom: 2 }}>
+              {lang === 'bn' ? 'আনুমানিক সময়' : 'EST. TIME'}
+            </Text>
+            <Text style={{ fontSize: 20, fontWeight: '900', color: txt }}>
+              {routeInfo?.duration || '--'}
+            </Text>
+          </View>
         </Animated.View>
       )}
 
-      {/* ── SWIPEABLE BOTTOM SHEET ── */}
+      {/* ── GOOGLE MAPS STYLE BOTTOM ETA CARD ── */}
       <Animated.View
         style={{
           position: 'absolute', top: sheetY, left: 0, right: 0, bottom: -40,
-          backgroundColor: cardBg, borderTopLeftRadius: 24, borderTopRightRadius: 24,
+          backgroundColor: isDark ? '#1e1e2d' : '#ffffff',
+          borderTopLeftRadius: 24, borderTopRightRadius: 24,
           shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 32, elevation: 20,
-          borderWidth: 1, borderColor: brd, borderBottomWidth: 0,
           zIndex: 10, overflow: 'hidden'
         }}
       >
-        {/* Drag Handle Container (Expanded touch area) */}
+        {/* Drag Handle Container */}
         <Animated.View
           {...panResponder.panHandlers}
-          style={{ width: '100%', alignItems: 'center', backgroundColor: cardBg }}
+          style={{ width: '100%', alignItems: 'center', backgroundColor: isDark ? '#1e1e2d' : '#ffffff' }}
         >
           <Pressable 
             onPress={toggleSheet} 
-            style={{ width: '100%', paddingTop: 24, paddingBottom: collapsed ? 24 : 16, alignItems: 'center', justifyContent: 'center' }}
+            style={{ width: '100%', paddingTop: 12, paddingBottom: 8, alignItems: 'center', justifyContent: 'center' }}
           >
-            <View style={{ width: 44, height: 5, borderRadius: 99, backgroundColor: isDark ? 'rgba(255,255,255,.3)' : 'rgba(0,0,0,.15)' }} />
+            <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: '#d1d5db' }} />
           </Pressable>
         </Animated.View>
 
+        {/* Minimal Bottom Handle View */}
         {collapsed && (
-          <Text style={{ textAlign: 'center', fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 2, color: sub, marginBottom: 18 }}>
-            {lang === 'bn' ? '↑ উপরে টানুন' : '↑ Swipe up for details'}
-          </Text>
+          <View style={{ alignItems: 'center', paddingBottom: 16 }}>
+            <Text style={{ fontSize: 13, fontWeight: '700', color: '#6b7280' }}>
+              {lang === 'bn' ? 'উপরে সোয়াইপ করে অর্ডার দেখুন' : 'Swipe up for order details'}
+            </Text>
+          </View>
         )}
 
         <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 140, gap: 12 }} scrollEnabled={!collapsed}>
@@ -376,7 +526,7 @@ export default React.memo(function GoToBranchView({
                               </Text>
                             </View>
                             <Text style={{ fontSize: 10, fontWeight: '700', color: sub }}>
-                              #{ord.seq || ord.id.slice(-5).toUpperCase()}
+                              #{ord.id}
                             </Text>
                           </View>
                           <Text style={{ fontSize: 14, fontWeight: '700', color: txt }}>{ord.customer?.name || '—'}</Text>
@@ -440,7 +590,7 @@ export default React.memo(function GoToBranchView({
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
                       <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: T.accent }} />
                       <Text style={{ fontSize: 10, fontWeight: '800', color: txt, textTransform: 'uppercase' }}>
-                        ORDER #{ord.seq || ord.id.slice(-5).toUpperCase()}
+                        ORDER #{ord.id}
                       </Text>
                     </View>
                   )}

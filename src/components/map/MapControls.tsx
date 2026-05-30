@@ -50,13 +50,13 @@ export const MapControls = ({
         {
           opacity: recenterAnim,
           transform: [{ scale: recenterAnim }],
-          bottom: minimal ? 40 : 380
+          bottom: minimal ? 120 : 420
         }
       ]}>
-        <Pressable onPress={reenterFollow} style={[styles.recenterBtn, { backgroundColor: 'rgba(0,0,0,0.8)', borderColor: 'rgba(255,255,255,0.15)' }]}>
+        <Pressable onPress={reenterFollow} style={[styles.recenterBtn, { backgroundColor: 'rgba(0,0,0,0.85)', borderColor: 'rgba(255,255,255,0.15)' }]}>
           <View style={styles.recenterInner}>
-            <Crosshair size={22} color="#fff" strokeWidth={2.5} />
-            <Text style={{ color: '#fff', fontSize: 10, fontWeight: '800', fontFamily: font, marginTop: 2 }}>
+            <Crosshair size={18} color="#fff" strokeWidth={2.5} />
+            <Text style={{ color: '#fff', fontSize: 13, fontWeight: '900', fontFamily: font, textTransform: 'uppercase', letterSpacing: 0.8 }}>
               {labels.recenter[lang]}
             </Text>
           </View>
@@ -116,9 +116,9 @@ const styles = StyleSheet.create({
   headerInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4 },
   searchBtn: { flex: 1, height: 46, borderRadius: 14, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, marginRight: 10 },
   controlBtn: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center' },
-  recenterWrap: { position: 'absolute', bottom: 420, left: 20, zIndex: 95 },
-  recenterBtn: { width: 64, height: 64, borderRadius: 32, overflow: 'hidden', borderWidth: 1, shadowColor: '#000', shadowOpacity: 0.4, shadowRadius: 15, elevation: 12 },
-  recenterInner: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  recenterWrap: { position: 'absolute', bottom: 420, right: 16, zIndex: 95 },
+  recenterBtn: { height: 46, borderRadius: 23, paddingHorizontal: 16, overflow: 'hidden', borderWidth: 1, shadowColor: '#000', shadowOpacity: 0.4, shadowRadius: 15, elevation: 12 },
+  recenterInner: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   mapControls: { position: 'absolute', bottom: 380, right: 16, gap: 12, zIndex: 90 },
   fab: { width: 48, height: 48, borderRadius: 24, overflow: 'hidden', elevation: 5, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 10 },
   fabBlur: { flex: 1, alignItems: 'center', justifyContent: 'center' },

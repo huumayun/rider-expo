@@ -22,7 +22,7 @@ export default function PickedSuccess({ order, onNext, updating }: Props) {
           <ChevronLeft size={24} color={T.text} />
         </Pressable>
         <Text style={{ color: T.text, fontFamily: font, fontSize: 20, fontWeight: '700' }}>
-          #{order.id.slice(-6).toUpperCase()}
+          #{order.id}
         </Text>
       </View>
 

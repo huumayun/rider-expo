@@ -46,7 +46,7 @@ const getMonthShort = (isoString: string) => {
 export default function AttendancePage() {
   const { rider } = useAuthStore();
   const router = useRouter();
-  const { T, theme, lang, font } = useApp();
+  const { T, t, theme, lang, font } = useApp();
   const isDark = theme === 'dark';
   
   const getTodayId = () => {
@@ -194,16 +194,21 @@ export default function AttendancePage() {
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
   useEffect(() => {
+    let anim: Animated.CompositeAnimation | null = null;
     if (isOnline) {
-      Animated.loop(
+      anim = Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, { toValue: 0.5, duration: 1000, useNativeDriver: true }),
           Animated.timing(pulseAnim, { toValue: 1, duration: 1000, useNativeDriver: true })
         ])
-      ).start();
+      );
+      anim.start();
     } else {
       pulseAnim.setValue(1);
     }
+    return () => {
+      if (anim) anim.stop();
+    };
   }, [isOnline]);
 
   return (
@@ -251,7 +256,7 @@ export default function AttendancePage() {
         <View style={{ flexDirection: 'row', gap: 10 }}>
           <View style={{ backgroundColor: isDark ? 'rgba(15,23,42,0.85)' : 'rgba(255,255,255,0.9)', borderWidth: 1, borderColor: T.border, borderRadius: 16, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
             <Animated.View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: isOnline ? T.green : T.danger, opacity: pulseAnim }} />
-            <Text style={{ fontSize: 11, fontWeight: '800', color: T.text, textTransform: 'uppercase', letterSpacing: 1.5, fontFamily: font }}>{isOnline ? 'Active' : 'Offline'}</Text>
+            <Text style={{ fontSize: 11, fontWeight: '800', color: T.text, textTransform: 'uppercase', letterSpacing: 1.5, fontFamily: font }}>{isOnline ? t('att_active') : t('att_offline')}</Text>
           </View>
           <View style={{ backgroundColor: isDark ? 'rgba(15,23,42,0.85)' : 'rgba(255,255,255,0.9)', borderWidth: 1, borderColor: T.border, borderRadius: 16, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <PackageCheck size={16} color={T.accent} strokeWidth={2.5} />
@@ -278,7 +283,7 @@ export default function AttendancePage() {
         {/* Header Summary */}
         <View style={{ paddingHorizontal: 24, paddingBottom: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <View>
-            <Text style={{ fontSize: 22, fontWeight: '900', color: T.text, marginBottom: 2, letterSpacing: -0.5, fontFamily: font }}>{lang === 'bn' ? 'অ্যাটেনডেন্স' : 'Attendance Log'}</Text>
+            <Text style={{ fontSize: 22, fontWeight: '900', color: T.text, marginBottom: 2, letterSpacing: -0.5, fontFamily: font }}>{t('att_log')}</Text>
             <Text style={{ fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 2, color: T.sub, fontFamily: font }}>{formatDateDayMonth(new Date().toISOString())}</Text>
           </View>
           <Pressable onPress={handleToggleDuty} disabled={loading} style={{ width: 48, height: 48, borderRadius: 16, backgroundColor: isOnline ? `${T.danger}15` : `${T.green}15`, borderWidth: 1, borderColor: isOnline ? `${T.danger}30` : `${T.green}30`, alignItems: 'center', justifyContent: 'center' }}>
@@ -296,7 +301,7 @@ export default function AttendancePage() {
                 <LogIn size={20} color="#fff" strokeWidth={2.5} />
               </View>
               <View>
-                <Text style={{ fontSize: 9, fontWeight: '800', textTransform: 'uppercase', color: T.sub, marginBottom: 2, fontFamily: font }}>Check In</Text>
+                <Text style={{ fontSize: 9, fontWeight: '800', textTransform: 'uppercase', color: T.sub, marginBottom: 2, fontFamily: font }}>{t('att_checkin')}</Text>
                 <Text style={{ fontSize: 16, fontWeight: '900', color: T.text, fontFamily: font }}>{checkInTime}</Text>
               </View>
             </View>
@@ -305,7 +310,7 @@ export default function AttendancePage() {
                 <BarChart2 size={20} color={T.sub} strokeWidth={2.5} />
               </View>
               <View>
-                <Text style={{ fontSize: 9, fontWeight: '800', textTransform: 'uppercase', color: T.sub, marginBottom: 2, fontFamily: font }}>Deliveries</Text>
+                <Text style={{ fontSize: 9, fontWeight: '800', textTransform: 'uppercase', color: T.sub, marginBottom: 2, fontFamily: font }}>{t('att_deliveries')}</Text>
                 <Text style={{ fontSize: 16, fontWeight: '900', color: T.text, fontFamily: font }}>{orderMarkers.length}</Text>
               </View>
             </View>
@@ -316,12 +321,12 @@ export default function AttendancePage() {
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <TrendingUp size={16} color={T.accent} strokeWidth={2.5} />
-                <Text style={{ fontSize: 11, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1.5, color: T.text, fontFamily: font }}>Weekly Activity</Text>
+                <Text style={{ fontSize: 11, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1.5, color: T.text, fontFamily: font }}>{t('att_weekly_act')}</Text>
               </View>
               <View style={{ flexDirection: 'row', backgroundColor: T.hi, borderRadius: 10, padding: 3 }}>
                 {['week', 'history'].map(v => (
                   <Pressable key={v} onPress={() => setSummaryView(v as any)} style={{ backgroundColor: summaryView === v ? T.surface : 'transparent', paddingVertical: 4, paddingHorizontal: 10, borderRadius: 8 }}>
-                    <Text style={{ color: summaryView === v ? T.accent : T.sub, fontSize: 9, fontWeight: '800', textTransform: 'uppercase', fontFamily: font }}>{v}</Text>
+                    <Text style={{ color: summaryView === v ? T.accent : T.sub, fontSize: 9, fontWeight: '800', textTransform: 'uppercase', fontFamily: font }}>{v === 'week' ? t('att_week') : t('att_history')}</Text>
                   </Pressable>
                 ))}
               </View>
@@ -343,7 +348,7 @@ export default function AttendancePage() {
               </View>
             ) : (
               <View style={{ alignItems: 'center', paddingVertical: 10 }}>
-                 <Text style={{ fontSize: 11, fontWeight: '600', color: T.sub, fontFamily: font }}>Detailed logs listed below</Text>
+                 <Text style={{ fontSize: 11, fontWeight: '600', color: T.sub, fontFamily: font }}>{t('att_detailed_logs')}</Text>
               </View>
             )}
           </View>
@@ -352,7 +357,7 @@ export default function AttendancePage() {
           <View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 }}>
               <History size={16} color={T.accent} strokeWidth={2.5} />
-              <Text style={{ fontSize: 11, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1.5, color: T.text, fontFamily: font }}>Rider History</Text>
+              <Text style={{ fontSize: 11, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1.5, color: T.text, fontFamily: font }}>{t('att_rider_hist')}</Text>
             </View>
 
             <View style={{ gap: 10 }}>
@@ -373,11 +378,11 @@ export default function AttendancePage() {
                             <Text style={{ fontSize: 13, fontWeight: '800', color: T.text, fontFamily: font }}>{formatDateDayMonth(log.date).split(',')[0]}</Text>
                             {log.totalOrders > 0 && (
                               <View style={{ backgroundColor: `${T.green}15`, paddingVertical: 2, paddingHorizontal: 6, borderRadius: 6 }}>
-                                <Text style={{ fontSize: 8, fontWeight: '900', color: T.green, fontFamily: font }}>{log.totalOrders} DEL</Text>
+                                <Text style={{ fontSize: 8, fontWeight: '900', color: T.green, fontFamily: font }}>{log.totalOrders} {t('att_del')}</Text>
                               </View>
                             )}
                           </View>
-                          <Text style={{ fontSize: 10, color: T.sub, fontWeight: '700', fontFamily: font }}>{duration} Hours Worked</Text>
+                          <Text style={{ fontSize: 10, color: T.sub, fontWeight: '700', fontFamily: font }}>{duration} {t('att_hours_worked')}</Text>
                         </View>
                       </View>
                       {isEx ? <ChevronUp size={16} color={T.accent} /> : <ChevronDown size={16} color={T.sub} />}
@@ -386,15 +391,15 @@ export default function AttendancePage() {
                     {isEx && (
                       <View style={{ paddingHorizontal: 20, paddingBottom: 20, flexDirection: 'row', gap: 10 }}>
                         <View style={{ flex: 1, backgroundColor: T.surface, borderWidth: 1, borderColor: T.border, borderRadius: 16, paddingVertical: 12, paddingHorizontal: 10, alignItems: 'center' }}>
-                          <Text style={{ fontSize: 8, fontWeight: '800', color: T.sub, textTransform: 'uppercase', marginBottom: 4, fontFamily: font }}>Check In</Text>
+                          <Text style={{ fontSize: 8, fontWeight: '800', color: T.sub, textTransform: 'uppercase', marginBottom: 4, fontFamily: font }}>{t('att_checkin')}</Text>
                           <Text style={{ fontSize: 13, fontWeight: '900', color: T.text, fontFamily: font }}>{log.checkInTime ? formatTime(log.checkInTime) : '--'}</Text>
                         </View>
                         <View style={{ flex: 1, backgroundColor: T.surface, borderWidth: 1, borderColor: T.border, borderRadius: 16, paddingVertical: 12, paddingHorizontal: 10, alignItems: 'center' }}>
-                          <Text style={{ fontSize: 8, fontWeight: '800', color: T.sub, textTransform: 'uppercase', marginBottom: 4, fontFamily: font }}>Check Out</Text>
+                          <Text style={{ fontSize: 8, fontWeight: '800', color: T.sub, textTransform: 'uppercase', marginBottom: 4, fontFamily: font }}>{t('att_checkout')}</Text>
                           <Text style={{ fontSize: 13, fontWeight: '900', color: T.text, fontFamily: font }}>{log.checkOutTime ? formatTime(log.checkOutTime) : '--'}</Text>
                         </View>
                         <View style={{ flex: 1, backgroundColor: T.surface, borderWidth: 1, borderColor: `${T.accent}25`, borderRadius: 16, paddingVertical: 12, paddingHorizontal: 10, alignItems: 'center' }}>
-                          <Text style={{ fontSize: 8, fontWeight: '800', color: T.accent, textTransform: 'uppercase', marginBottom: 4, fontFamily: font }}>Orders</Text>
+                          <Text style={{ fontSize: 8, fontWeight: '800', color: T.accent, textTransform: 'uppercase', marginBottom: 4, fontFamily: font }}>{t('att_orders')}</Text>
                           <Text style={{ fontSize: 13, fontWeight: '900', color: T.text, fontFamily: font }}>{log.totalOrders || 0}</Text>
                         </View>
                       </View>

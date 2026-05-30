@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { View, Text, Pressable, ScrollView, Dimensions, Modal, ActivityIndicator, BackHandler } from 'react-native';
+import { View, Text, Pressable, ScrollView, Dimensions, Modal, ActivityIndicator, BackHandler, Linking } from 'react-native';
 import Animated, { FadeIn, FadeOut, FadeInRight, FadeOutLeft, FadeInUp, LinearTransition, useAnimatedStyle, withTiming, withSequence, useSharedValue, SlideInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { db } from '../../config/firebase';
 import { doc, updateDoc, serverTimestamp, writeBatch, arrayUnion, onSnapshot, query, collection, where } from 'firebase/firestore';
-import { X, ChevronRight, XCircle, PackageCheck, CheckCircle2, Package, MessageSquare, ChevronDown, ListOrdered, CornerUpLeft, AlertCircle, Store } from 'lucide-react-native';
+import { X, ChevronRight, XCircle, PackageCheck, CheckCircle2, Package, MessageSquare, ChevronDown, ListOrdered, CornerUpLeft, AlertCircle, Store, Navigation, Phone } from 'lucide-react-native';
 import { useApp } from '../../context/AppContext';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import NetInfo from '@react-native-community/netinfo';
 
 import GoToBranchView from '../OrderFlow/steps/GoToBranchView';
 import ArrivedAtBranchView from '../OrderFlow/steps/ArrivedAtBranchView';
@@ -24,8 +25,11 @@ import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage
 import DeliveryConfirmation from '../../components/modals/DeliveryConfirmation';
 import ReturnOrderModal from '../../components/modals/ReturnOrderModal';
 import RouteOverviewMap from '../../components/map/RouteOverviewMap';
+import SimpleOverviewMap from '../../components/map/SimpleOverviewMap';
 import { useAutoNavigation } from '../../hooks/useAutoNavigation';
 import { useLocationStore } from '../../store/locationStore';
+import { calculateDistance, getOptimalDeliveryRoute } from '../../utils/batchUtils';
+
 
 // Realtime UnreadBadge for Footer
 const UnreadBadge = React.memo(({ count, bg }: { count: number, bg: string }) => {
@@ -50,7 +54,7 @@ const ReturnInProgressView = React.memo(({ order }: { order: any }) => {
             {lang === 'bn' ? 'ফেরত যাচ্ছে' : 'Returning to Branch'}
           </Text>
           <Text style={{ fontFamily: font, fontSize: 30, letterSpacing: 2, color: T.text }}>
-            #{order.seq || order.id?.slice(-6).toUpperCase()}
+            #{order.id}
           </Text>
         </View>
       </View>
@@ -84,7 +88,7 @@ const ReturnInProgressView = React.memo(({ order }: { order: any }) => {
   );
 });
 
-const PickedSuccessView = React.memo(({ orders, onContinue }: { orders: any[], onContinue: () => void }) => {
+const PickedSuccessView = React.memo(({ orders, riderLocation, onStartClosestDelivery, onContinue }: { orders: any[], riderLocation: any, onStartClosestDelivery?: (order: any) => void, onContinue: () => void }) => {
   const { T, t, lang, font } = useApp();
   
   const aggregatedItems = useMemo(() => {
@@ -100,19 +104,194 @@ const PickedSuccessView = React.memo(({ orders, onContinue }: { orders: any[], o
     return Object.values(map);
   }, [orders]);
 
+  const isSolo = orders.length === 1;
+  const soloOrder = orders[0];
+  const phone = soloOrder?.customer?.phone || soloOrder?.customerPhone || soloOrder?.phone;
+  const customerName = soloOrder?.customerName || soloOrder?.customer?.name || 'Customer';
+  const customerAddress = soloOrder?.customer?.address || '—';
+  
+  const distance = useMemo(() => {
+    if (!isSolo) return '';
+    const custLoc = soloOrder?.customer?.location || soloOrder?.customer?.address;
+    if (!riderLocation || !custLoc) return '--';
+    
+    const lat = custLoc.lat ?? custLoc.latitude;
+    const lng = custLoc.lng ?? custLoc.longitude;
+    if (!lat || !lng) return '--';
+    
+    const distMeters = calculateDistance(riderLocation.lat, riderLocation.lng, Number(lat), Number(lng));
+    if (distMeters >= 1000) {
+      const km = (distMeters / 1000).toFixed(1);
+      return lang === 'bn' ? `${km} কি.মি. দূরে` : `${km} km away`;
+    }
+    const m = Math.round(distMeters);
+    return lang === 'bn' ? `${m} মি. দূরে` : `${m} m away`;
+  }, [isSolo, soloOrder, riderLocation, lang]);
+
+  const closestOrder = useMemo(() => {
+    if (!orders || orders.length <= 1 || !riderLocation) return null;
+    
+    let minDistance = Infinity;
+    let closest: any = null;
+    
+    orders.forEach(o => {
+      const custLoc = o.customer?.location || o.customer?.address;
+      if (!custLoc) return;
+      
+      const lat = custLoc.lat ?? custLoc.latitude;
+      const lng = custLoc.lng ?? custLoc.longitude;
+      if (!lat || !lng) return;
+      
+      const dist = calculateDistance(riderLocation.lat, riderLocation.lng, Number(lat), Number(lng));
+      if (dist < minDistance) {
+        minDistance = dist;
+        closest = { order: o, distance: dist };
+      }
+    });
+    
+    return closest;
+  }, [orders, riderLocation]);
+
+  const closestDistanceStr = useMemo(() => {
+    if (!closestOrder) return '';
+    const distMeters = closestOrder.distance;
+    if (distMeters >= 1000) {
+      const km = (distMeters / 1000).toFixed(1);
+      return lang === 'bn' ? `${km} কি.মি. দূরে` : `${km} km away`;
+    }
+    const m = Math.round(distMeters);
+    return lang === 'bn' ? `${m} মি. দূরে` : `${m} m away`;
+  }, [closestOrder, lang]);
+
   return (
     <View style={{ flex: 1, backgroundColor: T.bg, zIndex: 10 }}>
-      <ScrollView contentContainerStyle={{ alignItems: 'center', padding: 24, paddingBottom: 120, gap: 28 }}>
+      <ScrollView contentContainerStyle={{ alignItems: 'center', padding: 24, paddingBottom: 120, gap: 24 }}>
         <View style={{ width: 80, height: 80, backgroundColor: T.green, borderRadius: 24, alignItems: 'center', justifyContent: 'center', shadowColor: '#22d47a', shadowOpacity: 0.4, shadowRadius: 20, elevation: 10 }}>
           <PackageCheck size={40} color="#fff" />
         </View>
-        <View style={{ alignItems: 'center' }}>
-          <Text style={{ fontFamily: font, fontSize: 30, letterSpacing: 2, color: T.text, marginBottom: 6 }}>{t('exec_picked_title')}</Text>
-          <Text style={{ fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 2, color: T.sub }}>
-            {orders.length > 1 ? (lang === 'bn' ? `এই ব্যাচে ${orders.length}টি অর্ডার আছে` : `${orders.length} orders in this trip`) : t('exec_picked_sub')}
-          </Text>
-        </View>
 
+        {isSolo ? (
+          <>
+            <View style={{ alignItems: 'center' }}>
+              <View style={{ backgroundColor: `${T.accent}12`, borderWidth: 1.5, borderColor: `${T.accent}30`, borderRadius: 14, paddingVertical: 5, paddingHorizontal: 14, marginBottom: 8 }}>
+                <Text style={{ fontFamily: font, fontSize: 14, fontWeight: '900', color: T.accent }}>
+                  #{soloOrder.id}
+                </Text>
+              </View>
+              <Text style={{ fontFamily: font, fontSize: 28, fontWeight: '900', color: T.text }}>
+                {lang === 'bn' ? 'পিকআপ সফল' : 'Pickup Successful'}
+              </Text>
+            </View>
+
+            {/* Premium Customer Card */}
+            <View style={{ width: '100%', maxWidth: 360, backgroundColor: T.surface, borderWidth: 1, borderColor: T.border, borderRadius: 24, padding: 20, gap: 16 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <View style={{ flex: 1, marginRight: 12 }}>
+                  <Text style={{ fontSize: 9, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 2, color: T.sub, marginBottom: 4 }}>
+                    {lang === 'bn' ? 'কাস্টমার' : 'CUSTOMER'}
+                  </Text>
+                  <Text style={{ fontSize: 18, fontWeight: '800', color: T.text }} numberOfLines={1}>
+                    {customerName}
+                  </Text>
+                </View>
+                {phone ? (
+                  <Pressable 
+                    onPress={() => Linking.openURL(`tel:${phone}`)} 
+                    style={{ 
+                      width: 48, 
+                      height: 48, 
+                      borderRadius: 16, 
+                      backgroundColor: T.green || '#22c55e', 
+                      alignItems: 'center', 
+                      justifyContent: 'center', 
+                      shadowColor: T.green || '#22c55e', 
+                      shadowOpacity: 0.25, 
+                      shadowRadius: 10, 
+                      elevation: 4 
+                    }}
+                  >
+                    <Phone size={20} color="#fff" />
+                  </Pressable>
+                ) : null}
+              </View>
+              
+              <View style={{ borderTopWidth: 1, borderTopColor: T.border, paddingTop: 16 }}>
+                <Text style={{ fontSize: 9, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 2, color: T.sub, marginBottom: 4 }}>
+                  {lang === 'bn' ? 'ডেলিভারি ঠিকানা' : 'DELIVERY ADDRESS'}
+                </Text>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: T.text, lineHeight: 20 }}>
+                  {customerAddress}
+                </Text>
+              </View>
+              
+              <View style={{ borderTopWidth: 1, borderTopColor: T.border, paddingTop: 16, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Navigation size={14} color={T.accent} strokeWidth={2.5} />
+                <Text style={{ fontSize: 13, fontWeight: '800', color: T.accent }}>
+                  {distance}
+                </Text>
+              </View>
+            </View>
+          </>
+        ) : (
+          <>
+            <View style={{ alignItems: 'center' }}>
+              <Text style={{ fontFamily: font, fontSize: 30, letterSpacing: 2, color: T.text, marginBottom: 6 }}>
+                {lang === 'bn' ? 'পিকআপ সফল' : 'Pickup Successful'}
+              </Text>
+              <Text style={{ fontSize: 11, fontWeight: '700', color: T.sub, textAlign: 'center', paddingHorizontal: 16, lineHeight: 16 }}>
+                {`অর্ডার ${orders.map(o => `#${o.id}`).join(', ')} সফলভাবে পিকআপ করা হয়েছে`}
+              </Text>
+            </View>
+
+            {/* Premium Suggestion Card inside Batch Pickup Success */}
+            {closestOrder && (
+              <View style={{ width: '100%', maxWidth: 360, backgroundColor: `${T.accent}08`, borderWidth: 1.5, borderColor: `${T.accent}30`, borderRadius: 24, padding: 18, gap: 12 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Navigation size={16} color={T.accent} strokeWidth={2.5} />
+                  <Text style={{ fontFamily: font, fontSize: 13, fontWeight: '900', color: T.accent, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    {lang === 'bn' ? '💡 সাজেস্টেড পরবর্তী ডেলিভারি' : '💡 Suggested Next Delivery'}
+                  </Text>
+                </View>
+                
+                <View>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: T.text, lineHeight: 18 }}>
+                    {lang === 'bn' 
+                      ? `কাস্টমার "${closestOrder.order.customerName || closestOrder.order.customer?.name || 'Customer'}" আপনার সবচেয়ে কাছে (${closestDistanceStr}) আছেন।` 
+                      : `Customer "${closestOrder.order.customerName || closestOrder.order.customer?.name || 'Customer'}" is nearest to you (${closestDistanceStr}).`}
+                  </Text>
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: T.sub, marginTop: 4 }}>
+                    {lang === 'bn' ? `অর্ডার আইডি: #${closestOrder.order.id}` : `Order ID: #${closestOrder.order.id}`}
+                  </Text>
+                </View>
+
+                <Pressable 
+                  onPress={() => onStartClosestDelivery?.(closestOrder.order)}
+                  style={{ 
+                    width: '100%', 
+                    height: 48, 
+                    borderRadius: 14, 
+                    backgroundColor: T.accent, 
+                    alignItems: 'center', 
+                    justifyContent: 'center', 
+                    flexDirection: 'row',
+                    gap: 6,
+                    shadowColor: T.accent, 
+                    shadowOpacity: 0.2, 
+                    shadowRadius: 8, 
+                    elevation: 3 
+                  }}
+                >
+                  <Text style={{ color: '#fff', fontSize: 12, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1.5 }}>
+                    {lang === 'bn' ? 'ডেলিভারি শুরু করুন' : 'Start Delivery'}
+                  </Text>
+                  <ChevronRight size={14} color="#fff" strokeWidth={3} />
+                </Pressable>
+              </View>
+            )}
+          </>
+        )}
+
+        {/* Package Items Card */}
         <View style={{ width: '100%', maxWidth: 360, backgroundColor: T.surface, borderWidth: 1, borderColor: T.border, borderRadius: 24, padding: 20 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: T.border, marginBottom: 12 }}>
             <Package size={13} color={T.accent} strokeWidth={2} />
@@ -146,7 +325,116 @@ const PickedSuccessView = React.memo(({ orders, onContinue }: { orders: any[], o
       <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: 24, zIndex: 20 }}>
         <Pressable onPress={onContinue} style={{ width: '100%', height: 60, borderRadius: 20, backgroundColor: T.text, alignItems: 'center', justifyContent: 'center', shadowColor: T.text, shadowOpacity: 0.25, shadowRadius: 15, elevation: 8 }}>
           <Text style={{ color: T.bg, fontSize: 12, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 2.5 }}>
-            {lang === 'bn' ? 'ডেলিভারি শুরু করুন' : 'Start Delivery Trip'}
+            {orders.length > 1 
+              ? (lang === 'bn' ? 'ঠিক আছে' : 'OKAY')
+              : (lang === 'bn' ? 'ডেলিভারি শুরু করুন' : 'Start Delivery Trip')}
+          </Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+});
+
+const NextOrderTransitionView = React.memo(({ targetOrder, riderLocation, onStart }: { targetOrder: any, riderLocation: any, onStart: () => void }) => {
+  const { T, lang, font } = useApp();
+  
+  const distance = useMemo(() => {
+    const custLoc = targetOrder?.customer?.location || targetOrder?.customer?.address;
+    if (!riderLocation || !custLoc) return '--';
+    
+    const lat = custLoc.lat ?? custLoc.latitude;
+    const lng = custLoc.lng ?? custLoc.longitude;
+    if (!lat || !lng) return '--';
+    
+    const distMeters = calculateDistance(riderLocation.lat, riderLocation.lng, lat, lng);
+    if (distMeters >= 1000) {
+      return `${(distMeters / 1000).toFixed(1)} km`;
+    }
+    return `${Math.round(distMeters)} m`;
+  }, [targetOrder, riderLocation]);
+
+  const phone = targetOrder?.customer?.phone || targetOrder?.customerPhone || targetOrder?.phone;
+
+  return (
+    <View style={{ flex: 1, backgroundColor: T.bg, padding: 24, justifyContent: 'center', alignItems: 'center' }}>
+      <View style={{ alignItems: 'center', gap: 20, marginBottom: 40 }}>
+        <View style={{ width: 100, height: 100, borderRadius: 32, backgroundColor: `${T.accent}12`, borderWidth: 2, borderColor: `${T.accent}30`, alignItems: 'center', justifyContent: 'center' }}>
+          <Navigation size={48} color={T.accent} strokeWidth={2} />
+        </View>
+        <View style={{ alignItems: 'center' }}>
+          <Text style={{ fontSize: 12, fontWeight: '800', letterSpacing: 3, textTransform: 'uppercase', color: T.accent, marginBottom: 6 }}>
+            {lang === 'bn' ? 'পরবর্তী গন্তব্য' : 'NEXT DESTINATION'}
+          </Text>
+          <Text style={{ fontFamily: font, fontSize: 32, fontWeight: '900', color: T.text, textAlign: 'center', lineHeight: 38 }}>
+            {distance} {lang === 'bn' ? 'দূরে রয়েছে' : 'Away'}
+          </Text>
+        </View>
+      </View>
+
+      <View style={{ width: '100%', maxWidth: 360, backgroundColor: T.surface, borderWidth: 1, borderColor: T.border, borderRadius: 24, padding: 24, gap: 16, marginBottom: 40 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <View style={{ flex: 1, marginRight: 12 }}>
+            <Text style={{ fontSize: 9, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 2, color: T.sub, marginBottom: 4 }}>
+              {lang === 'bn' ? 'কাস্টমার' : 'CUSTOMER'}
+            </Text>
+            <Text style={{ fontSize: 18, fontWeight: '800', color: T.text }} numberOfLines={1}>
+              {targetOrder.customerName || targetOrder.customer?.name || 'Customer'}
+            </Text>
+          </View>
+          <View style={{ backgroundColor: `${T.accent}12`, borderWidth: 1.5, borderColor: `${T.accent}30`, borderRadius: 12, paddingVertical: 6, paddingHorizontal: 12 }}>
+            <Text style={{ fontFamily: font, fontSize: 13, fontWeight: '800', color: T.accent }}>
+              #{targetOrder.id}
+            </Text>
+          </View>
+        </View>
+
+        <View style={{ borderTopWidth: 1, borderTopColor: T.border, paddingTop: 16 }}>
+          <Text style={{ fontSize: 9, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 2, color: T.sub, marginBottom: 4 }}>
+            {lang === 'bn' ? 'ডেলিভারি ঠিকানা' : 'DELIVERY ADDRESS'}
+          </Text>
+          <Text style={{ fontSize: 14, fontWeight: '500', color: T.text, lineHeight: 20 }}>
+            {targetOrder.customer?.address || '—'}
+          </Text>
+        </View>
+      </View>
+
+      <View style={{ width: '100%', maxWidth: 360, flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+        {phone ? (
+          <Pressable 
+            onPress={() => Linking.openURL(`tel:${phone}`)} 
+            style={{ 
+              width: 64, 
+              height: 64, 
+              borderRadius: 20, 
+              backgroundColor: T.green || '#22c55e', 
+              alignItems: 'center', 
+              justifyContent: 'center', 
+              shadowColor: T.green || '#22c55e', 
+              shadowOpacity: 0.3, 
+              shadowRadius: 15, 
+              elevation: 8 
+            }}
+          >
+            <Phone size={24} color="#fff" />
+          </Pressable>
+        ) : null}
+        <Pressable 
+          onPress={onStart} 
+          style={{ 
+            flex: 1, 
+            height: 64, 
+            borderRadius: 20, 
+            backgroundColor: T.accent, 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            shadowColor: T.accent, 
+            shadowOpacity: 0.3, 
+            shadowRadius: 15, 
+            elevation: 8 
+          }}
+        >
+          <Text style={{ color: '#fff', fontSize: 14, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 2.5 }}>
+            {lang === 'bn' ? 'ডেলিভারি শুরু করুন' : 'Start Next Delivery'}
           </Text>
         </Pressable>
       </View>
@@ -214,7 +502,7 @@ const BatchOverviewDrawer = React.memo(({ liveOrders, currentIndex, setCurrentIn
                 <View style={{ flex: 1 }}>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                     <Text style={{ fontSize: 15, fontWeight: '900', color: T.text }}>
-                      #{o.seq || o.id.slice(-6).toUpperCase()}
+                      #{o.id}
                     </Text>
                     <View style={{ backgroundColor: isPickup ? '#f59e0b22' : '#22c55e22', paddingVertical: 2, paddingHorizontal: 8, borderRadius: 6 }}>
                       <Text style={{ fontSize: 9, fontWeight: '900', color: isPickup ? '#f59e0b' : '#22c55e', textTransform: 'uppercase' }}>
@@ -241,7 +529,7 @@ const BatchOverviewDrawer = React.memo(({ liveOrders, currentIndex, setCurrentIn
   );
 });
 
-export default function OrderExecution({ batchOrders = [], order = null, onMinimize, onFinish }: any) {
+export default function OrderExecution({ batchOrders = [], order = null, onMinimize, onFinish, onActiveBatchChange }: any) {
   const { activeOrders: contextActiveOrders, loading: contextLoading } = useRiderData();
   const branches: any[] = []; // Placeholder or fetch from context if available
   const router = useRouter();
@@ -259,14 +547,18 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
     return contextActiveOrders;
   }, [batchOrders, order, contextActiveOrders, batchId]);
 
-  const initialBatchSize = useRef(initOrders.length);
-  useEffect(() => {
-    initialBatchSize.current = initOrders.length;
-  }, [initOrders.length]);
-
   const { T, t, theme, lang, showToast, font } = useApp();
   const insets = useSafeAreaInsets();
   const setIsExecuting = useUIStore(s => s.setIsExecuting);
+
+  const [isConnected, setIsConnected] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener(state => {
+      setIsConnected(state.isConnected ?? true);
+    });
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
     setIsExecuting(true);
@@ -296,47 +588,124 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
   const orderIdsString = useMemo(() => initOrders.map((o: any) => o.id).sort().join(','), [initOrders]);
 
   const [liveOrders, setLiveOrders] = useState<any[]>(initOrders);
+  const initialBatchSize = useRef(initOrders.length);
+  useEffect(() => {
+    initialBatchSize.current = liveOrders.length;
+  }, [liveOrders.length]);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [mapTouchTime, setMapTouchTime] = useState(Date.now());
 
-  // --- Intelligent Sorting Logic ---
+  const { currentLocation: riderLocation, heading, speed } = useLocationStore();
+
+  const [capturedLocation, setCapturedLocation] = useState<any>(riderLocation);
+  useEffect(() => {
+    if (riderLocation) {
+      setCapturedLocation(riderLocation);
+    }
+  }, [liveOrders.map((o: any) => o.status).join(','), liveOrders.length]);
+
+  // --- Dynamic Location-Aware Sorting Logic ---
   const sortedOrders = useMemo(() => {
-    return [...liveOrders].sort((a, b) => {
-      const isPickupA = a.status === 'accepted' || a.status === 'arrived_at_branch';
-      const isPickupB = b.status === 'accepted' || b.status === 'arrived_at_branch';
-      if (isPickupA && !isPickupB) return -1;
-      if (!isPickupA && isPickupB) return 1;
-      return (a.seq || 0) - (b.seq || 0);
+    return getOptimalDeliveryRoute(liveOrders, capturedLocation);
+  }, [liveOrders, capturedLocation]);
+
+  const activeOrder = sortedOrders[currentIndex] || sortedOrders[0];
+
+  const [transitionTargetOrder, setTransitionTargetOrder] = useState<any>(null);
+  const prevOrderStatuses = useRef<Record<string, string>>({});
+  const transitionPendingRef = useRef(false);
+
+  // Detect when ANY order becomes delivered — independent of which order is activeOrder
+  useEffect(() => {
+    if (liveOrders.length === 0) return;
+    const DONE = ['delivered', 'success', 'cancelled', 'rescheduled', 'skipped', 'returned'];
+
+    const newlyDelivered = liveOrders.filter(o => {
+      const prev = prevOrderStatuses.current[o.id];
+      return prev && !DONE.includes(prev) && ['delivered', 'success'].includes(o.status);
     });
-  }, [liveOrders]);
+
+    // Update stored statuses
+    liveOrders.forEach(o => { prevOrderStatuses.current[o.id] = o.status; });
+
+    if (newlyDelivered.length > 0) {
+      const nextIncomplete = liveOrders.find((o: any) => !DONE.includes(o.status));
+      if (nextIncomplete) {
+        transitionPendingRef.current = true;
+        setTransitionTargetOrder(nextIncomplete);
+      } else {
+        // No incomplete orders in current liveOrders.
+        // Check if there are other active (incomplete) orders in contextActiveOrders
+        const globalIncomplete = contextActiveOrders.filter((o: any) => !DONE.includes(o.status) && !liveOrders.some(x => x.id === o.id));
+        if (globalIncomplete.length > 0 && riderLocation) {
+          // Find the one nearest to riderLocation
+          const sorted = [...globalIncomplete].sort((a: any, b: any) => {
+            const aLoc = a.customer?.location || a.customer?.address;
+            const bLoc = b.customer?.location || b.customer?.address;
+            const aLat = aLoc?.lat ?? aLoc?.latitude;
+            const aLng = aLoc?.lng ?? aLoc?.longitude;
+            const bLat = bLoc?.lat ?? bLoc?.latitude;
+            const bLng = bLoc?.lng ?? bLoc?.longitude;
+            
+            if (!aLat || !aLng) return 1;
+            if (!bLat || !bLng) return -1;
+            
+            const distA = calculateDistance(riderLocation.lat, riderLocation.lng, Number(aLat), Number(aLng));
+            const distB = calculateDistance(riderLocation.lat, riderLocation.lng, Number(bLat), Number(bLng));
+            return distA - distB;
+          });
+          
+          transitionPendingRef.current = true;
+          setTransitionTargetOrder(sorted[0]);
+        }
+      }
+    }
+  }, [liveOrders, contextActiveOrders, riderLocation]);
 
   useEffect(() => {
-    if (sortedOrders.length > 0 && sortedOrders[currentIndex]?.status === 'delivered') {
-      const nextIdx = sortedOrders.findIndex(o => o.status !== 'delivered' && o.status !== 'returned');
+    // Only auto-advance if there's no pending transition waiting for user input
+    if (transitionTargetOrder || transitionPendingRef.current) return;
+    if (sortedOrders.length > 0 && ['delivered', 'cancelled', 'returned'].includes(sortedOrders[currentIndex]?.status)) {
+      const nextIdx = sortedOrders.findIndex(o => !['delivered', 'success', 'cancelled', 'rescheduled', 'skipped', 'returned'].includes(o.status));
       if (nextIdx !== -1) setCurrentIndex(nextIdx);
     }
-  }, [sortedOrders, currentIndex]);
+  }, [sortedOrders, currentIndex, transitionTargetOrder]);
+
+  const [isPickedSuccess, setIsPickedSuccess] = useState(() => {
+    return initOrders.some((o: any) => o.status === 'picked');
+  });
 
   useEffect(() => {
+    if (isPickedSuccess) return; // Freeze liveOrders while success screen is shown
     if (initOrders.length > 0) {
       setLiveOrders(prev => {
-        const currentIds = prev.map((o: any) => o.id).sort().join(',');
-        const newIds = initOrders.map((o: any) => o.id).sort().join(',');
-        if (currentIds !== newIds) return initOrders;
+        if (prev.length === 0) return initOrders;
+
+        // If the new list of IDs has absolutely no overlap with existing ones,
+        // it means we switched to a completely different batch, so reset.
+        const prevIds = new Set(prev.map(o => o.id));
+        const hasOverlap = initOrders.some((o: any) => prevIds.has(o.id));
+        if (!hasOverlap) return initOrders;
+
+        // Otherwise, only append new orders and retain all others to prevent removing completed ones.
+        const hasNewOrders = initOrders.some((o: any) => !prevIds.has(o.id));
+        if (hasNewOrders) {
+          const newOrders = initOrders.filter((o: any) => !prevIds.has(o.id));
+          return [...prev, ...newOrders];
+        }
         return prev;
       });
     }
-  }, [orderIdsString]);
+  }, [orderIdsString, isPickedSuccess]);
 
   const [otpOrder, setOtpOrder] = useState<any>(null);
   const [showReturnModal, setShowReturnModal] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [showOverviewDrawer, setShowOverviewDrawer] = useState(false);
-  const { currentLocation: riderLocation, heading, speed } = useLocationStore();
   const [isPicking, setIsPicking] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [pickupPhotos, setPickupPhotos] = useState<any>({});
   const [isVerified, setIsVerified] = useState(false);
-  const [isPickedSuccess, setIsPickedSuccess] = useState(false);
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const [isUploading, setIsUploading] = useState(false);
   const [loadingAction, setLoadingAction] = useState(false);
@@ -365,8 +734,8 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
     returned: { textKey: 'flow_returned', finished: true, grad: '#ef4444' },
   };
 
-  const activeOrder = sortedOrders[currentIndex] || sortedOrders[0];
   const [visualStatus, setVisualStatus] = useState<string | null>(null);
+  const currentStatus = visualStatus || activeOrder?.status || 'delivered';
 
   useEffect(() => {
     if (activeOrder?.status && (!loadingAction || !visualStatus)) {
@@ -374,7 +743,15 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
     }
   }, [activeOrder?.id, activeOrder?.status, loadingAction]);
 
-  const currentStatus = visualStatus || activeOrder?.status || 'delivered';
+  useEffect(() => {
+    if (!isPickedSuccess && ['go_to_branch', 'picked', 'out_for_delivery'].includes(currentStatus)) {
+      setIsNavigatingState(true);
+      setFollowMode(true);
+    } else {
+      setIsNavigatingState(false);
+    }
+  }, [currentStatus, isPickedSuccess]);
+
   const isBatchMode = initialBatchSize.current > 1;
 
   const totalUnread = useMemo(() => Object.values(unreadCounts).reduce((a, b) => a + b, 0), [unreadCounts]);
@@ -383,16 +760,19 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
   useEffect(() => {
     if (liveOrders.length === 0) return;
     
-    // Batch updates to prevent multiple re-renders
-    const ids = liveOrders.map(o => o.id);
-    
-    // Listen to all relevant orders in one go if batchId exists
-    const bid = batchId || liveOrders[0].batchId;
-    let unsub: any;
+    // Listen to all relevant orders in one go if a real Firestore batchId exists
+    const bid = (batchId && typeof batchId === 'string' && !String(batchId).startsWith('pickup_'))
+      ? batchId
+      : (liveOrders[0]?.batchId && !String(liveOrders[0].batchId).startsWith('pickup_'))
+        ? liveOrders[0].batchId
+        : null;
+
+    let unsubs: any[] = [];
     
     if (bid) {
+      // Real Firestore batchId — single query listener
       const q = query(collection(db, 'orders'), where('batchId', '==', bid));
-      unsub = onSnapshot(q, (snap: any) => {
+      const unsub = onSnapshot(q, (snap: any) => {
         const updated = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
         setLiveOrders(prev => {
           const changed = updated.some((u: any) => {
@@ -402,6 +782,24 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
           return changed ? updated : prev;
         });
       });
+      unsubs = [unsub];
+    } else {
+      // Virtual batch (pre-pick grouping) or solo order — subscribe to each doc individually
+      unsubs = liveOrders.map(ord =>
+        onSnapshot(doc(db, 'orders', ord.id), (snap: any) => {
+          if (!snap.exists()) return;
+          const updated = { id: snap.id, ...snap.data() };
+          setLiveOrders(prev => {
+            const idx = prev.findIndex(x => x.id === updated.id);
+            if (idx === -1) return prev;
+            const existing = prev[idx];
+            if (existing.status === updated.status && existing.updatedAt?.seconds === updated.updatedAt?.seconds) return prev;
+            const next = [...prev];
+            next[idx] = updated;
+            return next;
+          });
+        })
+      );
     }
 
     // Chat unread listeners (still needed per order, but we can optimize the state update)
@@ -414,7 +812,7 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
     });
 
     return () => {
-      if (unsub) unsub();
+      unsubs.forEach(u => u());
       chatUnsubs.forEach(u => u());
     };
   }, [orderIdsString, batchId]);
@@ -423,7 +821,7 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
   // Location tracking is now handled by Zustand useLocationStore
 
   useEffect(() => {
-    if (liveOrders.length === 0) return;
+    if (liveOrders.length === 0 || transitionTargetOrder || transitionPendingRef.current) return;
     const curStatus = (liveOrders[currentIndex] as any)?.status;
     const isCompleted = ['delivered', 'success', 'cancelled', 'rescheduled', 'skipped', 'returned'].includes(curStatus);
     if (isCompleted) {
@@ -432,7 +830,7 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
         setCurrentIndex(nextIncomplete);
       }
     }
-  }, [liveOrders, currentIndex]);
+  }, [liveOrders, currentIndex, transitionTargetOrder]);
 
   // Sync Branch Data for Map
   useEffect(() => {
@@ -444,21 +842,43 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
     }
   }, [activeOrder?.branchId]);
 
-  const routeDestination = useMemo(() => {
+  const routeDestinationMapProp = useMemo(() => {
     const isBeforePick = ['assigned', 'accepted', 'go_to_branch', 'arrived_at_branch'].includes(currentStatus);
     if (isBeforePick && branchData?.location) {
-      return { lat: Number(branchData.location.lat), lng: Number(branchData.location.lng) };
+      const lat = branchData.location.lat ?? branchData.location.latitude;
+      const lng = branchData.location.lng ?? branchData.location.longitude;
+      return lat && lng ? { latitude: Number(lat), longitude: Number(lng) } : null;
     }
-    if (activeOrder?.customer?.location) {
-      return { lat: Number(activeOrder.customer.location.lat), lng: Number(activeOrder.customer.location.lng) };
+    const custLoc = activeOrder?.customer?.location || activeOrder?.customer?.address;
+    if (custLoc) {
+      const lat = custLoc.lat ?? custLoc.latitude;
+      const lng = custLoc.lng ?? custLoc.longitude;
+      return lat && lng ? { latitude: Number(lat), longitude: Number(lng) } : null;
     }
     return null;
   }, [currentStatus, branchData, activeOrder]);
 
-  useAutoNavigation(isNavigating ? routeDestination : null);
+  const branchLocationMapProp = useMemo(() => {
+    if (!branchData?.location) return undefined;
+    const lat = branchData.location.lat ?? branchData.location.latitude;
+    const lng = branchData.location.lng ?? branchData.location.longitude;
+    return lat && lng ? { latitude: Number(lat), longitude: Number(lng) } : undefined;
+  }, [branchData?.location]);
+
+  const customerDestinationsMapProp = useMemo(() => {
+    return liveOrders.map((o: any) => {
+      const loc = o.customer?.location || o.customer?.address;
+      if (!loc) return null;
+      const lat = loc.lat ?? loc.latitude;
+      const lng = loc.lng ?? loc.longitude;
+      return lat && lng ? { latitude: Number(lat), longitude: Number(lng) } : null;
+    }).filter(Boolean);
+  }, [liveOrders]);
+
+  useAutoNavigation(isNavigating ? (routeDestinationMapProp ? { lat: routeDestinationMapProp.latitude, lng: routeDestinationMapProp.longitude } : null) : null);
 
   const flow = FLOW_CONFIG[currentStatus] || { textKey: 'flow_waiting', finished: true, grad: '#374151' };
-  const isMapView = !isPicking && ['go_to_branch', 'picked', 'out_for_delivery'].includes(currentStatus);
+  const isMapView = !isPicking && ['assigned', 'accepted', 'go_to_branch', 'picked', 'out_for_delivery'].includes(currentStatus);
   const hasNavHeader = ['go_to_branch', 'picked', 'out_for_delivery'].includes(currentStatus);
 
   const allPhotosTaken = useMemo(() => (liveOrders || []).every((o: any) => !!pickupPhotos[o.id]), [liveOrders, pickupPhotos]);
@@ -513,7 +933,7 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
         onMinimize(); return;
       }
 
-      const beforeDelivery = ['assigned', 'accepted', 'go_to_branch', 'arrived_at_branch', 'picked'].includes(currentStatus);
+      const beforeDelivery = ['assigned', 'accepted', 'go_to_branch', 'arrived_at_branch'].includes(currentStatus);
       if (beforeDelivery) {
         if (currentStatus === 'arrived_at_branch') {
           setIsPicking(true);
@@ -524,7 +944,8 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
               batch.update(doc(db, 'orders', ord.id), { 
                 status: 'picked', 
                 pickedAt: serverTimestamp(), 
-                updatedAt: serverTimestamp() 
+                updatedAt: serverTimestamp(),
+                batchId: null,
               });
             });
             await batch.commit();
@@ -534,7 +955,7 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
             setIsPicking(false);
             setIsPickedSuccess(true);
             setIsUploading(false); // No longer blocking
-            showToast?.(t('toast_picked'), `#${activeOrder.id.slice(-6).toUpperCase()}`, 'order_status');
+            showToast?.(t('toast_picked'), `#${activeOrder.id}`, 'order_status');
 
             // 3. Background Photo Upload Lifecycle
             (async () => {
@@ -576,15 +997,16 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
           if (!['cancelled', 'rescheduled', 'skipped'].includes(o.status)) batchWr.update(doc(db, 'orders', o.id), { status: flow.next, [`${flow.next}At`]: serverTimestamp(), updatedAt: serverTimestamp() });
         });
         await batchWr.commit();
+        setVisualStatus(flow.next);
         await ensureMinDelay();
-        if (currentStatus === 'assigned') showToast?.(t('toast_accepted'), `#${activeOrder.id.slice(-6).toUpperCase()}`, 'new_order');
-        if (currentStatus === 'accepted') {
-          showToast?.(t('flow_go_branch'), `#${activeOrder.id.slice(-6).toUpperCase()}`, 'order_status');
+        if (currentStatus === 'assigned') showToast?.(t('toast_accepted'), `#${activeOrder.id}`, 'new_order');
+        else if (currentStatus === 'accepted') {
+          showToast?.(t('flow_go_branch'), `#${activeOrder.id}`, 'order_status');
           setIsNavigating(true);
         }
-        if (currentStatus === 'go_to_branch') showToast?.(t('toast_arrived_branch'), `#${activeOrder.id.slice(-6).toUpperCase()}`, 'order_status');
-        if (currentStatus === 'picked') {
-          showToast?.(t('toast_trip_started'), `#${activeOrder.id.slice(-6).toUpperCase()}`, 'order_status');
+        if (currentStatus === 'go_to_branch') showToast?.(t('toast_arrived_branch'), `#${activeOrder.id}`, 'order_status');
+        else if (currentStatus === 'arrived_at_branch') {
+          showToast?.(t('toast_trip_started'), `#${activeOrder.id}`, 'order_status');
           setIsNavigating(true);
         }
         return;
@@ -595,6 +1017,7 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
         return;
       }
       await updateDoc(doc(db, 'orders', activeOrder.id), { status: flow.next, [`${flow.next}At`]: serverTimestamp(), updatedAt: serverTimestamp() });
+      setVisualStatus(flow.next);
       await ensureMinDelay();
     } catch (e) { 
       console.error(e); 
@@ -617,13 +1040,79 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
   };
 
   const renderCurrentStep = () => {
+    if (transitionTargetOrder) {
+      return (
+        <NextOrderTransitionView
+          targetOrder={transitionTargetOrder}
+          riderLocation={riderLocation}
+          onStart={() => {
+            const idx = sortedOrders.findIndex(o => o.id === transitionTargetOrder.id);
+            if (idx !== -1) {
+              setCurrentIndex(idx);
+              transitionPendingRef.current = false;
+              setTransitionTargetOrder(null);
+            } else {
+              // It's a global order!
+              // Call the callback to update the active batch in parent
+              if (onActiveBatchChange) {
+                setLiveOrders([transitionTargetOrder]);
+                setCurrentIndex(0);
+                onActiveBatchChange(transitionTargetOrder.id);
+                transitionPendingRef.current = false;
+                setTransitionTargetOrder(null);
+              } else {
+                // Fallback if no callback (e.g. standalone screen)
+                setLiveOrders([transitionTargetOrder]);
+                setCurrentIndex(0);
+                transitionPendingRef.current = false;
+                setTransitionTargetOrder(null);
+              }
+            }
+          }}
+        />
+      );
+    }
     if (isPickedSuccess) {
       return (
         <PickedSuccessView 
           orders={liveOrders} 
+          riderLocation={riderLocation}
+          onStartClosestDelivery={async (closestOrd: any) => {
+            setIsPickedSuccess(false);
+            // 1. Update the closest order's status to 'out_for_delivery' in Firestore
+            try {
+              await updateDoc(doc(db, 'orders', closestOrd.id), {
+                status: 'out_for_delivery',
+                out_for_deliveryAt: serverTimestamp(),
+                updatedAt: serverTimestamp()
+              });
+            } catch (err) {
+              console.error("Start closest delivery error:", err);
+            }
+            
+            // 2. Set activeBatchId in parent to this closest order's ID
+            if (onActiveBatchChange) {
+              onActiveBatchChange(closestOrd.id);
+            }
+            
+            // 3. Trigger transition to out_for_delivery UI in OrderExecution
+            setLiveOrders([closestOrd]);
+            setCurrentIndex(0);
+            setVisualStatus('out_for_delivery');
+          }}
           onContinue={async () => {
             setIsPickedSuccess(false);
-            await handleAction();
+            if (liveOrders.length > 1) {
+              // Batch order - close success screen and exit to home screen, leaving orders as 'picked'
+              if (onFinish) onFinish();
+              else if (onMinimize) onMinimize();
+            } else {
+              // Single order - transition to delivery page
+              if (onActiveBatchChange) {
+                onActiveBatchChange(activeOrder.id);
+              }
+              await handleAction();
+            }
           }} 
         />
       );
@@ -638,7 +1127,7 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
 
   if (!activeOrder) return null;
 
-    const allCompleted = liveOrders.every((o: any) => ['delivered', 'success', 'cancelled', 'rescheduled', 'skipped', 'returned'].includes(o.status));
+    const allCompleted = !transitionTargetOrder && !transitionPendingRef.current && liveOrders.every((o: any) => ['delivered', 'success', 'cancelled', 'rescheduled', 'skipped', 'returned'].includes(o.status));
     const props = { 
       order: activeOrder, 
       riderLocation, 
@@ -649,8 +1138,9 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
       followMode,
       routeInfo,
       branchData,
-      routeDestination,
-      heading
+      routeDestination: routeDestinationMapProp,
+      heading,
+      mapTouchTime
     };
     if (allCompleted) {
       const anySuccess = liveOrders.some((o: any) => ['delivered', 'success'].includes(o.status));
@@ -666,8 +1156,8 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
       case 'go_to_branch': return <GoToBranchView {...props} isAccepted={true} orderStatus="go_to_branch" />;
       case 'arrived_at_branch': return <ArrivedAtBranchView {...props} onPhotosChange={setPickupPhotos} onVerificationStatusChange={setIsVerified} />;
       case 'picked':
-      case 'out_for_delivery': return <GoToCustomerView {...props} orderStatus={currentStatus} onCancelRequest={() => setShowReturnModal(true)} />;
-      case 'arrived_at_customer': return <ArrivedAtCustomerView {...props} onCancelRequest={() => setShowReturnModal(true)} />;
+      case 'out_for_delivery': return <GoToCustomerView {...props} batchOrders={[activeOrder]} orderStatus={currentStatus} onCancelRequest={() => setShowReturnModal(true)} />;
+      case 'arrived_at_customer': return <ArrivedAtCustomerView {...props} batchOrders={[activeOrder]} onCancelRequest={() => setShowReturnModal(true)} />;
       case 'returning_to_branch': return <ReturnInProgressView order={activeOrder} />;
       default: return null;
     }
@@ -717,9 +1207,9 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
         <View style={{ paddingTop: insets.top + 10, paddingHorizontal: 24, paddingBottom: 18, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', backgroundColor: T.surface, borderBottomWidth: 1, borderBottomColor: T.border, zIndex: 10 }}>
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 9, fontWeight: '800', letterSpacing: 3, textTransform: 'uppercase', color: T.accent, marginBottom: 4 }}>
-              {isBatchMode ? `Drop ${currentIndex + 1}/${initialBatchSize.current}` : t('exec_order_label')} #{activeOrder.seq || activeOrder.id?.slice(-6).toUpperCase()}
+              {isBatchMode ? `Drop ${currentIndex + 1}/${initialBatchSize.current}` : t('exec_order_label')} #{activeOrder.id}
             </Text>
-            <Text style={{ fontFamily: font, fontSize: 26, letterSpacing: 1.5, textTransform: 'uppercase', color: T.text, lineHeight: 28 }} numberOfLines={1}>
+            <Text adjustsFontSizeToFit style={{ fontFamily: font, fontSize: 24, letterSpacing: 1.5, textTransform: 'uppercase', color: T.text, lineHeight: 28 }} numberOfLines={1}>
               {currentStatus.replace(/_/g, ' ')}
             </Text>
           </View>
@@ -749,26 +1239,39 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
 
       {isMapView && (
         <View style={{ position: 'absolute', inset: 0 }}>
-          <RouteOverviewMap 
-            assignedOrders={liveOrders} 
-            branches={branches}
-            minimal={true}
-            routeOrigin={riderLocation ? { latitude: riderLocation.lat, longitude: riderLocation.lng } : undefined}
-            routeDestination={routeDestination ? { latitude: routeDestination.lat, longitude: routeDestination.lng } : undefined}
-            onRouteReady={setRouteInfo}
-            accentColor={T.accent}
-            navigationMode={isNavigating}
-            followMode={followMode}
-            onFollowModeChange={setFollowMode}
-            livePos={riderLocation}
-            heading={heading || 0}
-            currentStatus={currentStatus}
-            branchLocation={branchData?.location ? { latitude: Number(branchData.location.lat), longitude: Number(branchData.location.lng) } : undefined}
-            customerDestinations={liveOrders.map((o: any) => {
-              const loc = o.customer?.location || o.customer?.address;
-              return loc?.lat ? { latitude: Number(loc.lat), longitude: Number(loc.lng) } : null;
-            }).filter(Boolean)}
-          />
+          {['assigned', 'accepted'].includes(currentStatus) ? (
+            <SimpleOverviewMap
+              assignedOrders={liveOrders}
+              livePos={riderLocation}
+              branchLocation={branchLocationMapProp}
+              customerDestinations={customerDestinationsMapProp}
+              isAccepted={currentStatus === 'accepted'}
+              accentColor={T.accent}
+              T={T}
+              lang={lang}
+              isDark={isDark}
+              onRouteReady={setRouteInfo}
+            />
+          ) : (
+            <RouteOverviewMap 
+              assignedOrders={liveOrders} 
+              branches={branches}
+              minimal={true}
+              routeOrigin={riderLocation ? { latitude: riderLocation.lat, longitude: riderLocation.lng } : undefined}
+              routeDestination={routeDestinationMapProp}
+              onRouteReady={setRouteInfo}
+              accentColor={T.accent}
+              navigationMode={isNavigating}
+              followMode={followMode}
+              onFollowModeChange={setFollowMode}
+              livePos={riderLocation}
+              heading={heading || 0}
+              currentStatus={currentStatus}
+              branchLocation={branchLocationMapProp}
+              customerDestinations={customerDestinationsMapProp}
+              onMapInteraction={() => setMapTouchTime(Date.now())}
+            />
+          )}
         </View>
       )}
 
@@ -783,10 +1286,10 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
       </Animated.View>
 
       {/* ACTION FOOTER */}
-      {!isPicking && !flow.finished && !isPickedSuccess && (
+      {!isPicking && !flow.finished && !isPickedSuccess && !transitionTargetOrder && (
         <Animated.View 
           layout={LinearTransition.springify().damping(25).stiffness(200)}
-          style={{ position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 80, padding: 16, paddingBottom: 24, flexDirection: 'row', gap: 10, backgroundColor: isMapView ? (isDark ? 'rgba(14,14,28,0.96)' : 'rgba(255,255,255,0.96)') : T.bg, borderTopWidth: isMapView ? 1 : 0, borderTopColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)' }}
+          style={{ position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 80, padding: 16, paddingBottom: 24, flexDirection: 'row', gap: 10, backgroundColor: isMapView ? 'transparent' : T.bg, borderTopWidth: 0 }}
         >
           {['picked', 'out_for_delivery', 'arrived_at_customer'].includes(currentStatus) && (
             <Pressable onPress={() => setShowReturnModal(true)} style={{ width: 58, height: 58, borderRadius: 17, backgroundColor: 'rgba(249,115,22,0.08)', borderWidth: 1, borderColor: 'rgba(249,115,22,0.25)', alignItems: 'center', justifyContent: 'center' }}>
@@ -801,7 +1304,7 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
           {currentStatus !== 'assigned' && (
             <Pressable onPress={() => setIsChatOpen(true)} style={{ width: 58, height: 58, borderRadius: 17, backgroundColor: surfHi, borderWidth: 1, borderColor: T.border, alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
               <MessageSquare size={21} color={T.text} strokeWidth={2} />
-              <UnreadBadge count={totalUnread} bg={T.bg} />
+              <UnreadBadge count={unreadCounts[activeOrder?.id] || 0} bg={T.bg} />
             </Pressable>
           )}
           {(() => {
@@ -915,14 +1418,86 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
             visible={!!otpOrder}
             order={otpOrder}
             onComplete={() => {
+              const deliveredOrder = otpOrder;
               setOtpOrder(null);
-              showToast?.(t('toast_delivered'), `#${otpOrder.id.slice(-6).toUpperCase()}`, 'order_status');
+              showToast?.(t('toast_delivered'), `#${deliveredOrder.id}`, 'order_status');
+
+              // Seamlessly calculate and trigger transition directly from the completed order to the next nearest one
+              const DONE = ['delivered', 'success', 'cancelled', 'rescheduled', 'skipped', 'returned'];
+              const nextIncomplete = liveOrders.find((o: any) => o.id !== deliveredOrder.id && !DONE.includes(o.status));
+              
+              if (nextIncomplete) {
+                transitionPendingRef.current = true;
+                setTransitionTargetOrder(nextIncomplete);
+              } else {
+                // If there's no other order in the active batch/liveOrders, find the next nearest incomplete global order
+                const globalIncomplete = contextActiveOrders.filter((o: any) => o.id !== deliveredOrder.id && !DONE.includes(o.status) && !liveOrders.some(x => x.id === o.id));
+                if (globalIncomplete.length > 0 && riderLocation) {
+                  const sorted = [...globalIncomplete].sort((a: any, b: any) => {
+                    const aLoc = a.customer?.location || a.customer?.address;
+                    const bLoc = b.customer?.location || b.customer?.address;
+                    const aLat = aLoc?.lat ?? aLoc?.latitude;
+                    const aLng = aLoc?.lng ?? aLoc?.longitude;
+                    const bLat = bLoc?.lat ?? bLoc?.latitude;
+                    const bLng = bLoc?.lng ?? bLoc?.longitude;
+                    
+                    if (!aLat || !aLng) return 1;
+                    if (!bLat || !bLng) return -1;
+                    
+                    const distA = calculateDistance(riderLocation.lat, riderLocation.lng, Number(aLat), Number(aLng));
+                    const distB = calculateDistance(riderLocation.lat, riderLocation.lng, Number(bLat), Number(bLng));
+                    return distA - distB;
+                  });
+                  
+                  transitionPendingRef.current = true;
+                  setTransitionTargetOrder(sorted[0]);
+                }
+              }
             }}
             onCancel={() => setOtpOrder(null)}
             hasNextOrder={initialBatchSize.current > 1 && currentIndex < sortedOrders.length - 1}
             nextOrder={sortedOrders[currentIndex + 1]}
           />
         </View>
+      )}
+
+      {/* OFFLINE CONNECTION BANNER */}
+      {!isConnected && (
+        <Animated.View
+          entering={FadeInUp.springify().damping(15)}
+          exiting={FadeOut.duration(200)}
+          style={{
+            position: 'absolute',
+            top: insets.top + 80, // perfect spacing right below header
+            left: 20,
+            right: 20,
+            zIndex: 9999,
+            backgroundColor: 'rgba(239, 68, 68, 0.95)', // translucent vibrant red
+            borderRadius: 16,
+            paddingVertical: 12,
+            paddingHorizontal: 20,
+            borderWidth: 1.5,
+            borderColor: 'rgba(239, 68, 68, 0.4)',
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 12,
+            shadowColor: '#ef4444',
+            shadowOffset: { width: 0, height: 8 },
+            shadowOpacity: 0.3,
+            shadowRadius: 16,
+            elevation: 8,
+          }}
+        >
+          <AlertCircle size={20} color="#ffffff" strokeWidth={2.5} />
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: '#ffffff', fontSize: 13, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1.2 }}>
+              {lang === 'bn' ? 'সংযোগ বিচ্ছিন্ন হয়েছে' : 'Connection Lost'}
+            </Text>
+            <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 10, fontWeight: '700', marginTop: 1, fontFamily: font }}>
+              {lang === 'bn' ? 'অফলাইন মোড সক্রিয় - আপনার লোকেশন ট্র্যাকিং বজায় থাকবে।' : 'Offline mode active - location tracking will still persist.'}
+            </Text>
+          </View>
+        </Animated.View>
       )}
     </View>
   );

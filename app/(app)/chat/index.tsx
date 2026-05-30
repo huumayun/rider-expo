@@ -1,368 +1,283 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { View, Text, Pressable, ScrollView, ActivityIndicator, TextInput, StyleSheet, Dimensions, Animated } from 'react-native';
+import React, { useState, useEffect, useMemo, useRef, memo, useCallback } from 'react';
+import {
+  View, Text, Pressable, FlatList, ActivityIndicator,
+  TextInput, StyleSheet, StatusBar,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { db, rtdb } from '@/config/firebase';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { ref, onValue } from 'firebase/database';
-import { Search, ChevronLeft, User, MessageSquare } from 'lucide-react-native';
+import { Search, ChevronLeft, MessageSquare, Check, CheckCheck } from 'lucide-react-native';
 import { useAuthStore } from '@/store/authStore';
 import { useApp } from '@/context/AppContext';
 import { RTDB_PATHS } from '@/config/constants';
 import { useRouter } from 'expo-router';
-import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 
-const { width } = Dimensions.get('window');
+import { ChatListRow, ChatMsgInfo } from '@/components/chat/ChatListRow';
 
-/* ── ChatRow ── */
-const ChatRow = ({ order, onClick, onLatestMessageUpdate, onMessagePresence, T, isDark, lang, font }: any) => {
-  const [lastMessage, setLastMessage] = useState({ text: '', time: 0, unread: 0 });
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+// ─── Divider ──────────────────────────────────────────────────────────────────
+const Divider = memo(({ isDark }: { isDark: boolean }) => (
+  <View style={[s.divider, {
+    backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9',
+    marginLeft: 20 + 52 + 14,
+  }]} />
+));
 
-  useEffect(() => {
-    Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }).start();
-  }, []);
-
-  useEffect(() => {
-    if (!order.id) return;
-    const chatRef = ref(rtdb, RTDB_PATHS.chat(order.id));
-
-    const unsub = onValue(chatRef, (snap) => {
-      if (snap.exists()) {
-        const msgs: any[] = Object.values(snap.val());
-        if (msgs.length > 0) {
-          const sorted = msgs.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-          const latest = sorted[0];
-          const unread = msgs.filter(m => m.senderRole === 'customer' && !m.read).length;
-
-          setLastMessage({
-            text: latest.text || (latest.image ? (lang === 'bn' ? '📷 ছবি' : '📷 Image') : ''),
-            time: latest.timestamp || 0,
-            unread
-          });
-
-          onMessagePresence(order.id, true);
-          onLatestMessageUpdate(order.id, latest.timestamp || 0);
-        } else {
-          onMessagePresence(order.id, false);
-        }
-      } else {
-        onMessagePresence(order.id, false);
-      }
-    });
-    return () => unsub();
-  }, [order.id, lang]);
-
-  const fmt = (ts: number) => {
-    if (!ts) return '';
-    const date = new Date(ts);
-    const now = new Date();
-    if (date.toDateString() === now.toDateString()) {
-      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    }
-    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-  };
-
-  const displayName = useMemo(() => {
-    const raw = order.customer?.name || 'Customer';
-    if (raw.includes(' - ')) return raw.split(' - ')[0];
-    return raw;
-  }, [order.customer?.name]);
-
-  return (
-    <Animated.View style={{ opacity: fadeAnim }}>
-      <Pressable
-        onPress={() => onClick(order)}
-        style={({ pressed }) => [
-          styles.chatRow,
-          {
-            backgroundColor: pressed ? (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)') : 'transparent',
-          }
-        ]}
-      >
-        <View style={styles.avatarContainer}>
-          <View style={[styles.avatar, { backgroundColor: isDark ? '#1e293b' : '#f1f5f9' }]}>
-            <User size={28} color={isDark ? '#94a3b8' : '#64748b'} strokeWidth={1.5} />
-          </View>
-          {lastMessage.unread > 0 && (
-            <View style={styles.onlineIndicator} />
-          )}
-        </View>
-
-        <View style={styles.chatInfo}>
-          <View style={styles.chatHeader}>
-            <Text style={[styles.name, { color: T.text, fontFamily: font }]} numberOfLines={1}>
-              {displayName}
-            </Text>
-            <Text style={[styles.time, { color: T.sub, fontFamily: font }]}>
-              {fmt(lastMessage.time)}
-            </Text>
-          </View>
-
-          <View style={styles.chatFooter}>
-            <Text style={[
-              styles.lastMsg,
-              {
-                color: lastMessage.unread > 0 ? (isDark ? '#fff' : '#000') : T.sub,
-                fontWeight: lastMessage.unread > 0 ? '700' : '400',
-                fontFamily: font
-              }
-            ]} numberOfLines={1}>
-              {lastMessage.text || (lang === 'bn' ? 'কোনো মেসেজ নেই' : 'No messages yet')}
-            </Text>
-
-            {lastMessage.unread > 0 && (
-              <View style={styles.unreadBadge}>
-                <Text style={styles.unreadText}>{lastMessage.unread}</Text>
-              </View>
-            )}
-          </View>
-        </View>
-      </Pressable>
-    </Animated.View>
-  );
-};
-
+// ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function ChatListPage() {
   const router = useRouter();
-  const { T, t, theme, lang, font } = useApp();
+  const { T, theme, lang } = useApp();
   const { rider } = useAuthStore();
   const isDark = theme === 'dark';
+  const screenBg = isDark ? '#0f172a' : '#f8fafc';
 
-  const [searchTerm, setSearchTerm] = useState('');
-  const [activeOrders, setActiveOrders] = useState<any[]>([]);
+  const [search, setSearch] = useState('');
+  const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [lastMessageTimes, setLastMessageTimes] = useState<Record<string, number>>({});
-  const [hasMessages, setHasMessages] = useState<Record<string, boolean>>({});
+  const [msgMap, setMsgMap] = useState<Record<string, ChatMsgInfo>>({});
 
+  // Track active RTDB unsubscribers by orderId
+  const rtdbRefs = useRef<Record<string, () => void>>({});
+
+  // ── Firestore: active orders ───────────────────────────────────────────────
   useEffect(() => {
     if (!rider?.uid) return;
-    const q = query(collection(db, 'orders'), where('riderId', '==', rider.uid), where('status', 'in', ['assigned', 'accepted', 'arrived_at_branch', 'picked', 'out_for_delivery', 'arrived_at_customer', 'returning_to_branch']));
-
-    const unsub = onSnapshot(q, snap => {
-      setActiveOrders(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    const q = query(
+      collection(db, 'orders'),
+      where('riderId', '==', rider.uid),
+      where('status', 'in', [
+        'assigned', 'accepted', 'go_to_branch',
+        'arrived_at_branch', 'picked', 'out_for_delivery',
+        'arrived_at_customer', 'returning_to_branch',
+      ])
+    );
+    return onSnapshot(q, snap => {
+      setOrders(snap.docs.map(d => ({ id: d.id, ...d.data() })));
       setLoading(false);
     });
-    return () => unsub();
   }, [rider?.uid]);
 
-  const handleMessagePresence = (orderId: string, exists: boolean) => {
-    setHasMessages(prev => {
-      if (prev[orderId] === exists) return prev;
-      return { ...prev, [orderId]: exists };
-    });
-  };
+  // ── RTDB: one listener per order, managed via ref ─────────────────────────
+  useEffect(() => {
+    const activeIds = new Set(orders.map(o => o.id));
 
-  const sortedAndFiltered = useMemo(() => {
-    return activeOrders
-      .filter(o => {
-        const nameMatch = (o.customer?.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-          o.id.toLowerCase().includes(searchTerm.toLowerCase());
-        const messageExists = hasMessages[o.id] === true;
-        return nameMatch && messageExists;
-      })
-      .sort((a, b) => (lastMessageTimes[b.id] || 0) - (lastMessageTimes[a.id] || 0));
-  }, [activeOrders, searchTerm, lastMessageTimes, hasMessages]);
+    // Tear down listeners for removed orders
+    Object.keys(rtdbRefs.current).forEach(id => {
+      if (!activeIds.has(id)) {
+        rtdbRefs.current[id]();
+        delete rtdbRefs.current[id];
+      }
+    });
+
+    // Set up listeners for new orders only
+    orders.forEach(order => {
+      if (rtdbRefs.current[order.id]) return;
+
+      const r = ref(rtdb, RTDB_PATHS.chat(order.id));
+      const unsub = onValue(r, snap => {
+        if (!snap.exists()) return;
+        const vals: any[] = Object.values(snap.val() ?? {});
+        if (!vals.length) return;
+        vals.sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
+        const latest = vals[0];
+        const unread = vals.filter(m => m.senderRole === 'customer' && !m.read).length;
+        const text: string =
+          latest.text ||
+          (latest.imageUrl ? (lang === 'bn' ? '📷 ছবি' : '📷 Photo') : '');
+
+        setMsgMap(prev => {
+          const old = prev[order.id];
+          // Reference equality bail-out — prevents extra renders
+          if (
+            old &&
+            old.text === text &&
+            old.time === (latest.timestamp ?? 0) &&
+            old.unread === unread
+          ) return prev;
+          return {
+            ...prev,
+            [order.id]: {
+              text,
+              time: latest.timestamp ?? 0,
+              unread,
+              lastSenderRole: latest.senderRole ?? 'customer',
+            },
+          };
+        });
+      });
+
+      rtdbRefs.current[order.id] = unsub;
+    });
+
+    // Full cleanup on unmount
+    return () => {
+      Object.values(rtdbRefs.current).forEach(u => u());
+      rtdbRefs.current = {};
+    };
+  }, [orders, lang]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Derived list: only orders WITH messages, sorted by latest ────────────
+  const displayList = useMemo(() => {
+    let list = orders.filter(o => !!msgMap[o.id]);
+    if (search.trim()) {
+      const s = search.trim().toLowerCase();
+      list = list.filter(o =>
+        (o.customer?.name ?? '').toLowerCase().includes(s) ||
+        o.id.toLowerCase().includes(s) ||
+        String(o.seq ?? '').includes(s)
+      );
+    }
+    return [...list].sort((a, b) => (msgMap[b.id]?.time ?? 0) - (msgMap[a.id]?.time ?? 0));
+  }, [orders, msgMap, search]);
+
+  const handlePress = useCallback((orderId: string, phone?: string, name?: string) => {
+    router.push({ pathname: '/(app)/chat/[orderId]', params: { orderId, phone, name } });
+  }, [router]);
+
+  const totalUnread = useMemo(
+    () => Object.values(msgMap).reduce((n, m) => n + m.unread, 0),
+    [msgMap]
+  );
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: isDark ? '#020617' : '#f8f9fa' }]}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn}>
-          <ChevronLeft size={28} color={T.text} />
+    <SafeAreaView style={[s.screen, { backgroundColor: screenBg }]} edges={['top']}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
+
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
+      <View style={[s.header, {
+        backgroundColor: isDark ? '#0f172a' : '#ffffff',
+        borderBottomColor: isDark ? 'rgba(255,255,255,0.07)' : '#e2e8f0',
+      }]}>
+        <Pressable onPress={() => router.back()} hitSlop={16} style={s.backBtn}>
+          <ChevronLeft size={24} color={T.text} strokeWidth={2.5} />
         </Pressable>
-        <Text style={[styles.headerTitle, { color: T.text, fontFamily: 'Nunito_800ExtraBold' }]}>
-          {lang === 'bn' ? 'মেসেজ' : 'messages'}
-        </Text>
+
+        <View style={{ flex: 1 }}>
+          <Text style={[s.headerTitle, { color: T.text }]}>
+            {lang === 'bn' ? 'কাস্টমার চ্যাট' : 'Customer Chats'}
+          </Text>
+          <Text style={[s.headerSub, { color: T.sub }]}>
+            {lang === 'bn'
+              ? `${displayList.length}টি কথোপকথন`
+              : `${displayList.length} conversations`}
+          </Text>
+        </View>
+
+        {totalUnread > 0 && (
+          <View style={[s.headerBadge, { backgroundColor: T.accent }]}>
+            <Text style={s.headerBadgeText}>{totalUnread}</Text>
+          </View>
+        )}
       </View>
 
-      {/* Search Bar */}
-      <View style={styles.searchContainer}>
-        <View style={[styles.searchBox, { backgroundColor: isDark ? '#1e293b' : '#fff', borderColor: isDark ? '#334155' : '#e2e8f0' }]}>
-          <Search size={20} color="#94a3b8" style={{ marginRight: 10 }} />
+      {/* ── Search ──────────────────────────────────────────────────────────── */}
+      <View style={[s.searchWrap, { backgroundColor: isDark ? '#0f172a' : '#ffffff' }]}>
+        <View style={[s.searchBox, {
+          backgroundColor: isDark ? 'rgba(255,255,255,0.07)' : '#f1f5f9',
+        }]}>
+          <Search size={16} color={T.sub} strokeWidth={2} />
           <TextInput
-            style={[styles.searchInput, { color: T.text, fontFamily: font }]}
-            placeholder={lang === 'bn' ? 'সার্চ চ্যাট...' : 'search_chats'}
-            placeholderTextColor="#94a3b8"
-            value={searchTerm}
-            onChangeText={setSearchTerm}
+            style={[s.searchInput, { color: T.text }]}
+            placeholder={lang === 'bn' ? 'নাম বা অর্ডার ID খুঁজুন...' : 'Search by name or order ID...'}
+            placeholderTextColor={T.sub}
+            value={search}
+            onChangeText={setSearch}
+            returnKeyType="search"
+            clearButtonMode="while-editing"
           />
         </View>
       </View>
 
-      {/* Chat List */}
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {loading ? (
-          <View style={styles.center}>
-            <ActivityIndicator size="large" color="#22d47a" />
-          </View>
-        ) : sortedAndFiltered.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <View style={[styles.emptyIcon, { backgroundColor: isDark ? '#1e293b' : '#f1f5f9' }]}>
-              <MessageSquare size={40} color={isDark ? '#94a3b8' : '#64748b'} strokeWidth={1.5} />
+      {/* ── List ────────────────────────────────────────────────────────────── */}
+      {loading ? (
+        <View style={s.center}>
+          <ActivityIndicator size="large" color={T.accent} />
+        </View>
+      ) : (
+        <FlatList
+          data={displayList}
+          keyExtractor={o => o.id}
+          renderItem={({ item, index }) => (
+            <>
+              <ChatListRow
+                order={item}
+                info={msgMap[item.id]}
+                onPress={handlePress}
+                T={T}
+                isDark={isDark}
+                lang={lang}
+              />
+              {index < displayList.length - 1 && <Divider isDark={isDark} />}
+            </>
+          )}
+          style={{ backgroundColor: isDark ? '#0f172a' : '#ffffff' }}
+          ListEmptyComponent={
+            <View style={s.empty}>
+              <LinearGradient
+                colors={isDark ? ['#1e293b', '#0f172a'] : ['#f1f5f9', '#e2e8f0']}
+                style={s.emptyIconWrap}
+              >
+                <MessageSquare size={36} color={T.accent} strokeWidth={1.5} />
+              </LinearGradient>
+              <Text style={[s.emptyTitle, { color: T.text }]}>
+                {lang === 'bn' ? 'কোনো মেসেজ নেই' : 'No messages yet'}
+              </Text>
+              <Text style={[s.emptySub, { color: T.sub }]}>
+                {lang === 'bn'
+                  ? 'কাস্টমার মেসেজ পাঠালে এখানে দেখাবে'
+                  : 'Customer messages will appear here'}
+              </Text>
             </View>
-            <Text style={[styles.emptyText, { color: T.sub, fontFamily: font }]}>
-              {lang === 'bn' ? 'কোনো মেসেজ পাওয়া যায়নি' : 'No messages found'}
-            </Text>
-          </View>
-        ) : (
-          sortedAndFiltered.map((order) => (
-            <ChatRow
-              key={order.id}
-              order={order}
-              onClick={(o: any) => router.push({ pathname: '/(app)/chat/[orderId]', params: { orderId: o.id } })}
-              onLatestMessageUpdate={(id: string, ts: number) => setLastMessageTimes(p => ({ ...p, [id]: ts }))}
-              onMessagePresence={handleMessagePresence}
-              T={T}
-              isDark={isDark}
-              lang={lang}
-              font={font}
-            />
-          ))
-        )}
-
-        {/* Hidden background listeners */}
-        {activeOrders.map(o => !hasMessages[o.id] && (
-          <View key={`hidden-${o.id}`} style={{ height: 0, opacity: 0 }}>
-            <ChatRow
-              order={o}
-              onClick={() => { }}
-              onLatestMessageUpdate={() => { }}
-              onMessagePresence={handleMessagePresence}
-              T={T}
-            />
-          </View>
-        ))}
-      </ScrollView>
+          }
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ flexGrow: 1 }}
+        />
+      )}
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1 },
+// ─── Styles ───────────────────────────────────────────────────────────────────
+const s = StyleSheet.create({
+  screen: { flex: 1 },
+
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 15,
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 16, paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 10,
   },
-  backBtn: {
-    marginRight: 15,
+  backBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { fontSize: 18, fontWeight: '800', lineHeight: 22 },
+  headerSub: { fontSize: 12, marginTop: 1 },
+  headerBadge: {
+    minWidth: 24, height: 24, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 7,
   },
-  headerTitle: {
-    fontSize: 24,
-    textTransform: 'lowercase',
-  },
-  searchContainer: {
-    paddingHorizontal: 20,
-    marginBottom: 20,
-  },
+  headerBadgeText: { color: '#fff', fontSize: 12, fontWeight: '900' },
+
+  searchWrap: { paddingHorizontal: 16, paddingVertical: 10 },
   searchBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 50,
-    borderRadius: 15,
-    paddingHorizontal: 15,
-    borderWidth: 1,
+    flexDirection: 'row', alignItems: 'center',
+    borderRadius: 12, paddingHorizontal: 12, height: 42, gap: 8,
   },
-  searchInput: {
-    flex: 1,
-    fontSize: 16,
+  searchInput: { flex: 1, fontSize: 14 },
+
+  divider: { height: StyleSheet.hairlineWidth },
+
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+
+  empty: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 80, paddingHorizontal: 40,
   },
-  listContent: {
-    paddingBottom: 40,
-  },
-  chatRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-  },
-  avatarContainer: {
-    position: 'relative',
-  },
-  avatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  onlineIndicator: {
-    position: 'absolute',
-    bottom: 2,
-    right: 2,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: '#22c55e',
-    borderWidth: 3,
-    borderColor: '#020617', // Match dark bg
-  },
-  chatInfo: {
-    flex: 1,
-    marginLeft: 15,
-    justifyContent: 'center',
-  },
-  chatHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  name: {
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  time: {
-    fontSize: 12,
-    opacity: 0.6,
-  },
-  chatFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  lastMsg: {
-    fontSize: 14,
-    flex: 1,
-    marginRight: 10,
-  },
-  unreadBadge: {
-    backgroundColor: '#22c55e',
-    minWidth: 20,
-    height: 20,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 6,
-  },
-  unreadText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: '900',
-  },
-  center: {
-    paddingVertical: 100,
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 100,
-  },
-  emptyIcon: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
+  emptyIconWrap: {
+    width: 88, height: 88, borderRadius: 28,
+    alignItems: 'center', justifyContent: 'center',
     marginBottom: 20,
   },
-  emptyText: {
-    fontSize: 16,
-    opacity: 0.5,
-  },
+  emptyTitle: { fontSize: 18, fontWeight: '800', marginBottom: 8, textAlign: 'center' },
+  emptySub: { fontSize: 13, textAlign: 'center', lineHeight: 20, opacity: 0.7 },
 });

@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react';
-import { View, Text, Pressable, ScrollView, Animated as RNAnimated, Dimensions, ActivityIndicator, Modal, FlatList, StyleSheet } from 'react-native';
+import { View, Text, Pressable, ScrollView, Animated as RNAnimated, Dimensions, ActivityIndicator, Modal, FlatList, StyleSheet, TouchableOpacity } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, usePathname } from 'expo-router';
-import { collection, query, where, orderBy, onSnapshot, doc, getDoc, getDocs, startAfter, limit } from 'firebase/firestore';
+import { collection, query, where, orderBy, onSnapshot, doc, getDoc, getDocs, startAfter, limit, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { Package, Clock, MapPin, ChevronRight, History, PlayCircle, Calendar, MessageSquare, ArrowLeft, Navigation, CheckCircle2 } from 'lucide-react-native';
 import { useAuthStore } from '../../store/authStore';
 import { useApp } from '../../context/AppContext';
-import { usePagination } from '../../hooks/usePagination';
+import { useLocation } from '../../context/LocationContext';
+import { calculateDistance } from '../../utils/batchUtils';
 import OrderDetailsModal from '../../components/modals/OrderDetailsModal';
 import ChatWindow from '../../components/chat/ChatWindow';
 import { ref, onValue } from 'firebase/database';
@@ -122,6 +123,47 @@ export default function OrdersPage() {
   const [loading, setLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
   const [activeChatOrder, setActiveChatOrder] = useState<any | null>(null);
+  const [totalUnread, setTotalUnread] = useState(0);
+
+  const { currentLocation: livePos } = useLocation();
+
+  const handleUnbatch = async (orderId: string) => {
+    try {
+      await updateDoc(doc(db, 'orders', orderId), { 
+        batchId: null, 
+        updatedAt: serverTimestamp() 
+      });
+    } catch (e) {
+      console.error("Error unbatching order:", e);
+    }
+  };
+
+  // Global Unread Badge Listener
+  useEffect(() => {
+    if (!activeOrders || activeOrders.length === 0) {
+      setTotalUnread(0);
+      return;
+    }
+    
+    const counts: Record<string, number> = {};
+    const unsubs: (() => void)[] = [];
+
+    activeOrders.forEach(o => {
+      const chatRef = ref(rtdb, RTDB_PATHS.chat(o.id));
+      const unsub = onValue(chatRef, (snap) => {
+        if (snap.exists()) {
+          const msgs = Object.values(snap.val() as any);
+          counts[o.id] = msgs.filter((m: any) => m.senderRole === 'customer' && !m.read).length;
+        } else {
+          counts[o.id] = 0;
+        }
+        setTotalUnread(Object.values(counts).reduce((a, b) => a + b, 0));
+      });
+      unsubs.push(() => unsub());
+    });
+
+    return () => unsubs.forEach(u => u());
+  }, [activeOrders]);
 
   const [historyOrders, setHistoryOrders] = useState<any[]>([]);
   const [hasMore, setHasMore] = useState(true);
@@ -193,7 +235,7 @@ export default function OrdersPage() {
         snap.docChanges().forEach(change => {
           const o = change.doc.data();
           if (change.type === 'added' && o.status === 'assigned') {
-            showToast?.(t('popup_new') || 'New Order assigned', `#${o.id.slice(-5)} - ${o.customer?.address || ''}`, 'new_order');
+            showToast?.(t('popup_new') || 'New Order assigned', `#${o.id} - ${o.customer?.address || ''}`, 'new_order');
           }
         });
       }
@@ -224,12 +266,93 @@ export default function OrdersPage() {
     const label = lang === 'bn' ? 'সক্রিয়' : 'Active';
     const batches: Record<string, any[]> = {};
     activeOrders.forEach((o: any) => {
-      const bid = o.batchId || o.id;
+      const isUnpicked = ['assigned', 'accepted', 'go_to_branch', 'arrived_at_branch'].includes(o.status);
+      const bid = isUnpicked ? `pickup_${o.branchId}` : (o.batchId || o.id);
       if (!batches[bid]) batches[bid] = [];
       batches[bid].push(o);
     });
     return { [label]: Object.values(batches).sort((a: any, b: any) => (b[0].updatedAt?.seconds || 0) - (a[0].updatedAt?.seconds || 0)) };
   }, [activeOrders, lang]);
+
+  const { soloGroups, batchGroups } = useMemo(() => {
+    const activeBatches = Object.values(groupedActive)[0] || [];
+    const solo = activeBatches.filter(g => g.length === 1);
+    const batches = activeBatches.filter(g => g.length > 1);
+    return { soloGroups: solo, batchGroups: batches };
+  }, [groupedActive]);
+
+  const smartRecommendation = useMemo(() => {
+    if (!livePos || activeOrders.length === 0) return null;
+
+    const unpicked = activeOrders.filter(o => 
+      ['assigned', 'accepted', 'go_to_branch', 'arrived_at_branch'].includes(o.status)
+    );
+    const picked = activeOrders.filter(o => 
+      ['picked', 'out_for_delivery', 'arrived_at_customer'].includes(o.status)
+    );
+
+    let nearestUnpickedBatch: any = null;
+    let minBranchDist = Infinity;
+    
+    if (unpicked.length > 0) {
+      unpicked.forEach(o => {
+        const b = o as any;
+        let bLat = b.branchLocation?.lat ?? b.branchLocation?.latitude ?? b.branchDetail?.location?.lat ?? b.branchDetail?.location?.latitude ?? b.branch?.location?.lat;
+        let bLng = b.branchLocation?.lng ?? b.branchLocation?.longitude ?? b.branchDetail?.location?.lng ?? b.branchDetail?.location?.longitude ?? b.branch?.location?.lng;
+        if (bLat && bLng) {
+          const dist = calculateDistance(livePos.lat, livePos.lng, Number(bLat), Number(bLng));
+          if (dist < minBranchDist) {
+            minBranchDist = dist;
+            nearestUnpickedBatch = o;
+          }
+        }
+      });
+    }
+
+    let nearestPickedOrder: any = null;
+    let minCustomerDist = Infinity;
+
+    if (picked.length > 0) {
+      picked.forEach(o => {
+        const c = o as any;
+        const lat = c.customerLocation?.lat ?? c.customerLocation?.latitude ?? c.customer?.location?.lat ?? c.customer?.location?.latitude ?? c.customer?.address?.lat;
+        const lng = c.customerLocation?.lng ?? c.customerLocation?.longitude ?? c.customer?.location?.lng ?? c.customer?.location?.longitude ?? c.customer?.address?.lng;
+        if (lat && lng) {
+          const dist = calculateDistance(livePos.lat, livePos.lng, Number(lat), Number(lng));
+          if (dist < minCustomerDist) {
+            minCustomerDist = dist;
+            nearestPickedOrder = o;
+          }
+        }
+      });
+    }
+
+    const showPickup = unpicked.length > 0 && (picked.length === 0 || minBranchDist < minCustomerDist);
+
+    if (showPickup && nearestUnpickedBatch) {
+      const bid = nearestUnpickedBatch.batchId || nearestUnpickedBatch.id;
+      const batchCount = activeOrders.filter(o => (o.batchId || o.id) === bid).length;
+      return {
+        type: 'pickup',
+        targetId: bid,
+        distance: minBranchDist,
+        title: lang === 'bn' ? '💡 সাজেস্টেড পিকআপ ট্রিপ' : '💡 Suggested Pickup Trip',
+        sub: lang === 'bn' ? `শাখাটি আপনার থেকে ${minBranchDist >= 1000 ? `${(minBranchDist/1000).toFixed(1)} km` : `${Math.round(minBranchDist)} m`} দূরে। (${batchCount}টি অর্ডার)` : `Branch is ${minBranchDist >= 1000 ? `${(minBranchDist/1000).toFixed(1)} km` : `${Math.round(minBranchDist)} m`} away. (${batchCount} orders)`,
+      };
+    } else if (nearestPickedOrder) {
+      const bid = nearestPickedOrder.batchId || nearestPickedOrder.id;
+      return {
+        type: 'delivery',
+        targetId: bid,
+        orderId: nearestPickedOrder.id,
+        distance: minCustomerDist,
+        title: lang === 'bn' ? '🛵 সাজেস্টেড ডেলিভারি' : '🛵 Suggested Delivery',
+        sub: lang === 'bn' ? `কাস্টমার #${nearestPickedOrder.id} আপনার থেকে ${minCustomerDist >= 1000 ? `${(minCustomerDist/1000).toFixed(1)} km` : `${Math.round(minCustomerDist)} m`} দূরে।` : `Customer #${nearestPickedOrder.id} is ${minCustomerDist >= 1000 ? `${(minCustomerDist/1000).toFixed(1)} km` : `${Math.round(minCustomerDist)} m`} away.`,
+      };
+    }
+
+    return null;
+  }, [activeOrders, livePos, lang]);
 
   const groupedHistory = useMemo(() => {
     const g: Record<string, any[][]> = {};
@@ -312,11 +435,35 @@ export default function OrdersPage() {
             </Text>
           </View>
 
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Text style={{ fontSize: 13, fontWeight: '800', color: T.text }}>
-              #{batch.map((o: any) => o.seq || o.id.slice(-5)).join(', #')}
-            </Text>
-          </View>
+          {batch.length > 1 ? (
+            <View style={{ gap: 8, marginTop: 8, borderBottomWidth: 1, borderBottomColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)', paddingBottom: 8 }}>
+              {batch.map((o: any) => (
+                <View key={o.id} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)', padding: 8, borderRadius: 10, borderWidth: 1, borderColor: T.border }}>
+                  <View style={{ flex: 1, marginRight: 8 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '800', color: T.text }}>#{o.id}</Text>
+                    <Text style={{ fontSize: 10, color: T.sub }} numberOfLines={1}>{o.customerName || 'Customer'}</Text>
+                  </View>
+                  <Pressable 
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      handleUnbatch(o.id);
+                    }}
+                    style={({ pressed }) => [{ backgroundColor: `${T.accent}12`, borderWidth: 1, borderColor: `${T.accent}30`, paddingVertical: 4, paddingHorizontal: 8, borderRadius: 6 }, pressed && { opacity: 0.7 }]}
+                  >
+                    <Text style={{ fontSize: 9, fontWeight: '900', color: T.accent, textTransform: 'uppercase' }}>
+                      {lang === 'bn' ? 'আলাদা করুন' : 'Deliver Solo'}
+                    </Text>
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+          ) : (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={{ fontSize: 13, fontWeight: '800', color: T.text }}>
+                #{batch.map((o: any) => o.id).join(', #')}
+              </Text>
+            </View>
+          )}
 
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc', borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12, borderWidth: 1, borderColor: isDark ? 'transparent' : '#e2e8f0' }}>
             <View style={{ flex: 1 }}>
@@ -385,6 +532,119 @@ export default function OrdersPage() {
   });
 
   const ListContent = useCallback(({ tabId }: { tabId: string }) => {
+    if (tabId === 'active') {
+      if (loading) {
+        return (
+          <View style={{ width, alignItems: 'center', paddingVertical: 80 }}>
+            <ActivityIndicator size="large" color={T.accent} />
+          </View>
+        );
+      }
+      if (activeOrders.length === 0) {
+        return (
+          <View style={{ width, alignItems: 'center', paddingVertical: 80, opacity: 0.5, paddingHorizontal: 20 }}>
+            <View style={{ width: 72, height: 72, borderRadius: 24, backgroundColor: `${T.accent}08`, borderWidth: 1.5, borderColor: T.border, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
+              <Package size={32} color={T.accent} />
+            </View>
+            <Text style={{ fontSize: 16, fontWeight: '800', color: T.text, marginBottom: 6 }}>{t('orders_empty')}</Text>
+          </View>
+        );
+      }
+      return (
+        <ScrollView style={{ width }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 140 }}>
+          <View style={{ paddingHorizontal: 20, paddingTop: 10, gap: 20 }}>
+            {/* SMART RECOMMENDATION BANNER */}
+            {smartRecommendation && (
+              <TouchableOpacity
+                onPress={() => {
+                  router.push({ pathname: '/order-execution', params: { batchId: smartRecommendation.targetId } });
+                }}
+                style={{
+                  backgroundColor: T.green,
+                  borderRadius: 24,
+                  padding: 16,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 12,
+                  marginBottom: 10
+                }}
+              >
+                <View style={{ flex: 1, gap: 4 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#fff' }} />
+                    <Text style={{ fontFamily: font, fontSize: 13, fontWeight: '900', color: '#fff', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                      {smartRecommendation.title}
+                    </Text>
+                  </View>
+                  <Text style={{ fontSize: 12, fontWeight: '600', color: 'rgba(255,255,255,0.95)' }}>
+                    {smartRecommendation.sub}
+                  </Text>
+                </View>
+                <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' }}>
+                  <ChevronRight size={20} color="#fff" strokeWidth={2.5} />
+                </View>
+              </TouchableOpacity>
+            )}
+
+            {/* BATCH TRIPS SECTION */}
+            {batchGroups.length > 0 && (
+              <View style={{ gap: 10 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                  <View style={{ width: 4, height: 16, backgroundColor: T.accent, borderRadius: 2 }} />
+                  <Text style={{ fontFamily: font, fontSize: 14, fontWeight: '800', color: T.sub, textTransform: 'uppercase', letterSpacing: 1 }}>
+                    {lang === 'bn' ? 'ব্যাচ ট্রিপস' : 'Batch Trips'}
+                  </Text>
+                  <View style={{ backgroundColor: `${T.accent}15`, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2 }}>
+                    <Text style={{ fontSize: 10, fontWeight: '800', color: T.accent }}>{batchGroups.length}</Text>
+                  </View>
+                </View>
+                {batchGroups.map((batch: any, index: number) => (
+                  <OrderItem
+                    key={index}
+                    batch={batch}
+                    tab="active"
+                    lang={lang}
+                    isDark={isDark}
+                    T={T}
+                    onOrderPress={handleOrderPress}
+                    onChatPress={setActiveChatOrder}
+                  />
+                ))}
+              </View>
+            )}
+
+            {/* SOLO ORDERS SECTION */}
+            {soloGroups.length > 0 && (
+              <View style={{ gap: 10, marginTop: 8 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                  <View style={{ width: 4, height: 16, backgroundColor: T.green, borderRadius: 2 }} />
+                  <Text style={{ fontFamily: font, fontSize: 14, fontWeight: '800', color: T.sub, textTransform: 'uppercase', letterSpacing: 1 }}>
+                    {lang === 'bn' ? 'একক অর্ডারসমূহ' : 'Solo Orders'}
+                  </Text>
+                  <View style={{ backgroundColor: `${T.green}15`, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2 }}>
+                    <Text style={{ fontSize: 10, fontWeight: '800', color: T.green }}>{soloGroups.length}</Text>
+                  </View>
+                </View>
+                {soloGroups.map((batch: any, index: number) => (
+                  <OrderItem
+                    key={index}
+                    batch={batch}
+                    tab="active"
+                    lang={lang}
+                    isDark={isDark}
+                    T={T}
+                    onOrderPress={handleOrderPress}
+                    onChatPress={setActiveChatOrder}
+                  />
+                ))}
+              </View>
+            )}
+          </View>
+        </ScrollView>
+      );
+    }
+
     const grouped = tabId === 'active' ? groupedActive : groupedHistory;
     const flatData = useMemo(() => {
       const items: any[] = [];
@@ -398,14 +658,6 @@ export default function OrdersPage() {
     }, [grouped, tabId]);
 
     const isEmpty = flatData.length === 0;
-
-    if (tabId === 'active' && loading) {
-      return (
-        <View style={{ width, alignItems: 'center', paddingVertical: 80 }}>
-          <ActivityIndicator size="large" color={T.accent} />
-        </View>
-      );
-    }
 
     if (isEmpty) {
       return (
@@ -485,7 +737,13 @@ export default function OrdersPage() {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <Pressable onPress={() => router.push('/chat')} style={({ pressed }) => [{ width: 44, height: 44, borderRadius: 15, borderWidth: 1, borderColor: T.border, backgroundColor: surf, alignItems: 'center', justifyContent: 'center' }, pressed && { opacity: 0.7 }]}>
                 <MessageSquare size={19} color={T.text} strokeWidth={2.2} />
-                <View style={{ position: 'absolute', top: 10, right: 10, width: 7, height: 7, borderRadius: 3.5, backgroundColor: T.accent, borderWidth: 1.5, borderColor: T.bg }} />
+                {totalUnread > 0 ? (
+                  <View style={{ position: 'absolute', top: -6, right: -6, minWidth: 20, height: 20, borderRadius: 10, backgroundColor: '#ff4d6d', borderWidth: 2, borderColor: T.bg, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 }}>
+                    <Text style={{ color: '#fff', fontSize: 10, fontWeight: '900' }}>{totalUnread}</Text>
+                  </View>
+                ) : (
+                  <View style={{ position: 'absolute', top: 10, right: 10, width: 7, height: 7, borderRadius: 3.5, backgroundColor: T.accent, borderWidth: 1.5, borderColor: T.bg }} />
+                )}
               </Pressable>
               {activeTab === 'history' && (
                 <View style={{ backgroundColor: surf, borderWidth: 1, borderColor: T.border, borderRadius: 15, paddingVertical: 7, paddingHorizontal: 14, alignItems: 'flex-end' }}>

@@ -9,7 +9,6 @@ import { useApp } from '../../context/AppContext';
 import ChatMessage from './ChatMessage';
 import TypingIndicator from './TypingIndicator';
 import * as ImagePicker from 'expo-image-picker';
-import QuickMessages from './QuickMessages';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -108,7 +107,7 @@ export default function ChatWindow({ order, onClose, visible }: any) {
                 <View>
                   <Text style={{ fontSize: 20, fontWeight: '900', color: T.text, fontFamily: font }}>{order?.customer?.name || t('chat_title')}</Text>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
-                    <Text style={{ fontSize: 9, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1.5, color: T.accent, opacity: 0.8, fontFamily: font }}>ORDER #{order?.id?.slice(-8)}</Text>
+                    <Text style={{ fontSize: 9, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1.5, color: T.accent, opacity: 0.8, fontFamily: font }}>{t('exec_order_label')} #{order?.id}</Text>
                     {customerTyping && (
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                         <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: T.green }} />
@@ -130,13 +129,14 @@ export default function ChatWindow({ order, onClose, visible }: any) {
             </View>
           </View>
 
-          {/* Quick Messages */}
-          <View style={{ backgroundColor: surf }}>
-            <QuickMessages onSelect={(msg) => handleSend(msg)} />
-          </View>
-
           {/* Messages */}
-          <ScrollView ref={scrollViewRef} style={{ flex: 1, backgroundColor: T.bg }} contentContainerStyle={{ paddingVertical: 16 }}>
+          <ScrollView 
+            ref={scrollViewRef} 
+            style={{ flex: 1, backgroundColor: T.bg }} 
+            contentContainerStyle={{ paddingVertical: 16 }}
+            onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: false })}
+            onLayout={() => scrollViewRef.current?.scrollToEnd({ animated: false })}
+          >
             {messages.map((msg: any) => (
               <ChatMessage key={msg.id} message={msg} isOwn={msg.senderRole === ROLES.RIDER} />
             ))}

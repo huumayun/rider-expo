@@ -1,31 +1,78 @@
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
+
 buildscript {
-  repositories {
-    google()
-    mavenCentral()
-  }
-  dependencies {
+    ext {
+        buildToolsVersion = "35.0.0"
+        minSdkVersion = 24
+        compileSdkVersion = 36
+        targetSdkVersion = 36
+        ndkVersion = "26.1.10909125"
+        kotlinVersion = "2.0.0"
+    }
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
         classpath 'com.google.gms:google-services:4.4.1'
-    classpath('com.android.tools.build:gradle')
-    classpath('com.facebook.react:react-native-gradle-plugin')
-    classpath('org.jetbrains.kotlin:kotlin-gradle-plugin')
-  }
+        classpath('com.android.tools.build:gradle:8.5.0')
+        classpath('com.facebook.react:react-native-gradle-plugin')
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.0.0")
+    }
 }
 
 allprojects {
-  repositories {
-    google()
-    mavenCentral()
-    maven { url 'https://www.jitpack.io' }
-  }
-}
-
-ext {
-    ndkVersion = "30.0.14904198"
-    compileSdkVersion = 36
-    targetSdkVersion = 36
-    minSdkVersion = 24
-    buildToolsVersion = "36.0.0"
+    repositories {
+        google()
+        mavenCentral()
+        maven { url 'https://www.jitpack.io' }
+    }
 }
 
 apply plugin: "expo-root-project"
 apply plugin: "com.facebook.react.rootproject"
+
+// Fix for React Native graphicsConversions.h build error
+ext.patchGraphicsConversionsLogic = {
+    def search1 = 'std::format("{}%", dimension.value)'
+    def replace1 = 'folly::to<std::string>(dimension.value) + "%"'
+    
+    // Patch node_modules source
+    def srcFile = new File(rootDir, "../node_modules/react-native/ReactCommon/react/renderer/core/graphicsConversions.h")
+    if (srcFile.exists()) {
+        def text = srcFile.text
+        if (text.contains(search1)) {
+            srcFile.text = text.replace(search1, replace1)
+            logger.lifecycle("Applied folly::to fix to graphicsConversions.h (node_modules)")
+        }
+    }
+
+    // Patch Gradle AAR transform caches fast
+    def gradleCacheDir = new File(gradle.gradleUserHomeDir, "caches")
+    if (gradleCacheDir.exists()) {
+        def proc = "cmd /c dir /s /b \"${gradleCacheDir.path}\\*graphicsConversions.h\"".execute()
+        proc.waitFor()
+        proc.in.text.eachLine { line ->
+            if (line.contains("reactnative")) {
+                def f = new File(line.trim())
+                if (f.exists()) {
+                    def text = f.text
+                    if (text.contains(search1)) {
+                        f.text = text.replace(search1, replace1)
+                        logger.lifecycle("Patched cached graphicsConversions.h: ${f.path}")
+                    }
+                }
+            }
+        }
+    }
+}
+
+allprojects {
+    tasks.whenTaskAdded { task ->
+        if (task.name.startsWith("buildCMake") || task.name.startsWith("externalNativeBuild") || task.name.startsWith("generateJsonModel")) {
+            task.doFirst {
+                rootProject.ext.patchGraphicsConversionsLogic()
+            }
+        }
+    }
+}

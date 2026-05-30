@@ -19,8 +19,7 @@ import { useRiderData } from '../../context/RiderDataContext';
 import { useUIStore } from '../../store/uiStore';
 import { useLocation } from '../../context/LocationContext';
 import RouteOverviewMap from '../../components/map/RouteOverviewMap';
-import OrderPopup from '../../components/modals/OrderPopup';
-import { checkAndCreateBatch } from '../../utils/batchUtils';
+import { checkAndCreateBatch, calculateDistance } from '../../utils/batchUtils';
 import OrderExecution from '../Order/OrderExecution';
 import { formatAppDate, toDate } from '../../utils/dateUtils';
 
@@ -186,13 +185,12 @@ export default function HomePage() {
   const setViewMode = useUIStore(s => s.setViewMode);
   const setIsExecuting = useUIStore(s => s.setIsExecuting);
   const isExecuting = useUIStore(s => s.isExecuting);
-  const [dutyStatus, setDutyStatus] = useState(rider?.dutyStatus || 'offline');
+  const dutyStatus = rider?.dutyStatus || 'offline';
+  const holdingBalance = rider?.holdingBalance || 0;
   const [refreshing, setRefreshing] = useState(false);
-  const [newOrderPopup, setNewOrderPopup] = useState<any>(null);
   const [activeOrderWarning, setActiveOrderWarning] = useState(false);
   const [rating, setRating] = useState<number | null>(null);
   const [reviews, setReviews] = useState<any[]>([]);
-  const [holdingBalance, setHoldingBalance] = useState(0);
   const [showReviewsDrawer, setShowReviewsDrawer] = useState(false);
   const [activeStatDrawer, setActiveStatDrawer] = useState<string | null>(null);
 
@@ -206,11 +204,6 @@ export default function HomePage() {
   const cashTxs = (stats as any)?.cashTxs || [];
   const isOnline = dutyStatus === 'online';
 
-  useEffect(() => {
-    if (!rider?.uid) return;
-    const unsub = onSnapshot(doc(db, 'employees', rider.uid), (d) => { if (d.exists()) { const data = d.data(); setDutyStatus(data.dutyStatus || 'offline'); setHoldingBalance(data.holdingBalance || 0); } });
-    return () => unsub();
-  }, [rider?.uid]);
 
   // Fetch branches for map markers
   useEffect(() => {
@@ -236,10 +229,6 @@ export default function HomePage() {
         setActiveStatDrawer(null);
         return true;
       }
-      if (newOrderPopup) {
-        setNewOrderPopup(null);
-        return true;
-      }
       if (activeBatchId && !isMinimized) {
         setIsMinimized(true);
         return true;
@@ -253,7 +242,7 @@ export default function HomePage() {
     );
 
     return () => backHandler.remove();
-  }, [activeBatchId, isMinimized, showReviewsDrawer, activeStatDrawer, newOrderPopup]);
+  }, [activeBatchId, isMinimized, showReviewsDrawer, activeStatDrawer]);
 
   // Removed branchOverlay listener, using OrderExecution instead.
 
@@ -273,39 +262,121 @@ export default function HomePage() {
     await updateDoc(doc(db, 'employees', rider!.uid), { dutyStatus: isOnline ? 'offline' : 'online', lastStatusUpdate: serverTimestamp() });
   };
 
-  const handleAcceptOrder = async (orderId: string) => {
-    const newOrder = activeOrders.find(o => o.id === orderId);
-    const batchIdToJoin = checkAndCreateBatch(newOrder, assignedOrders);
-    await updateDoc(doc(db, 'orders', orderId), {
-      status: 'accepted',
-      batchId: batchIdToJoin,
-      acceptedAt: serverTimestamp(),
-      updatedBy: rider!.uid
-    });
-    setNewOrderPopup(null);
-  };
 
-  const handleRejectOrder = async (orderId: string) => {
-    await updateDoc(doc(db, 'orders', orderId), {
-      status: 'pending',
-      riderId: null,
-      batchId: null,
-      rejectedBy: arrayUnion(rider!.uid),
-      updatedAt: serverTimestamp()
-    });
-    setNewOrderPopup(null);
+
+  const handleUnbatch = async (orderId: string) => {
+    try {
+      await updateDoc(doc(db, 'orders', orderId), { 
+        batchId: null, 
+        updatedAt: serverTimestamp() 
+      });
+    } catch (e) {
+      console.error("Error unbatching order:", e);
+    }
   };
 
   const groupedAssignedOrders = useMemo(() => {
     const groups: Record<string, any[]> = {};
     assignedOrders.forEach((o: any) => {
-      const bid = o.batchId || o.id;
+      const isUnpicked = ['assigned', 'accepted', 'go_to_branch', 'arrived_at_branch'].includes(o.status);
+      const bid = isUnpicked 
+        ? (o.batchId ? `pickup_${o.branchId}_${o.batchId}` : `pickup_${o.branchId}_${o.id}`) 
+        : (o.batchId || o.id);
       if (!groups[bid]) groups[bid] = [];
       groups[bid].push(o);
     });
     const sorted = Object.values(groups).sort((a: any, b: any) => (a[0].status === 'assigned' ? -1 : 1));
     return sorted;
   }, [assignedOrders]);
+
+  const { soloGroups, batchGroups } = useMemo(() => {
+    const solo = groupedAssignedOrders.filter(g => g.length === 1);
+    const batches = groupedAssignedOrders.filter(g => g.length > 1);
+    return { soloGroups: solo, batchGroups: batches };
+  }, [groupedAssignedOrders]);
+
+  const smartRecommendation = useMemo(() => {
+    if (!livePos || assignedOrders.length === 0) return null;
+
+    // Separate unpicked (pickup phase) and picked (delivery phase)
+    const unpicked = assignedOrders.filter(o => 
+      ['assigned', 'accepted', 'go_to_branch', 'arrived_at_branch'].includes(o.status)
+    );
+    const picked = assignedOrders.filter(o => 
+      ['picked', 'out_for_delivery', 'arrived_at_customer'].includes(o.status)
+    );
+
+    // Calculate nearest branch
+    let nearestUnpickedBatch: any = null;
+    let minBranchDist = Infinity;
+    
+    if (unpicked.length > 0) {
+      unpicked.forEach(o => {
+        const b = o as any;
+        let bLat = b.branchLocation?.lat ?? b.branchLocation?.latitude ?? b.branchDetail?.location?.lat ?? b.branchDetail?.location?.latitude ?? b.branch?.location?.lat ?? branches?.[b.branchId]?.location?.lat ?? branches?.[b.branchId]?.location?.latitude ?? branches?.[b.branchId]?.lat ?? branches?.[b.branchId]?.latitude;
+        let bLng = b.branchLocation?.lng ?? b.branchLocation?.longitude ?? b.branchDetail?.location?.lng ?? b.branchDetail?.location?.longitude ?? b.branch?.location?.lng ?? branches?.[b.branchId]?.location?.lng ?? branches?.[b.branchId]?.location?.longitude ?? branches?.[b.branchId]?.lng ?? branches?.[b.branchId]?.longitude;
+        if (bLat && bLng) {
+          const dist = calculateDistance(livePos.lat, livePos.lng, Number(bLat), Number(bLng));
+          if (dist < minBranchDist) {
+            minBranchDist = dist;
+            nearestUnpickedBatch = o;
+          }
+        }
+      });
+    }
+
+    // Calculate nearest customer
+    let nearestPickedOrder: any = null;
+    let minCustomerDist = Infinity;
+
+    if (picked.length > 0) {
+      picked.forEach(o => {
+        const c = o as any;
+        const lat = c.customerLocation?.lat ?? c.customerLocation?.latitude ?? c.customer?.location?.lat ?? c.customer?.location?.latitude ?? c.customer?.address?.lat;
+        const lng = c.customerLocation?.lng ?? c.customerLocation?.longitude ?? c.customer?.location?.lng ?? c.customer?.location?.longitude ?? c.customer?.address?.lng;
+        if (lat && lng) {
+          const dist = calculateDistance(livePos.lat, livePos.lng, Number(lat), Number(lng));
+          if (dist < minCustomerDist) {
+            minCustomerDist = dist;
+            nearestPickedOrder = o;
+          }
+        }
+      });
+    }
+
+    // Proximity Suggestion Decision
+    // If rider is close to a branch (e.g., within 500m) or doesn't have any picked-up orders:
+    const showPickup = unpicked.length > 0 && (picked.length === 0 || minBranchDist < minCustomerDist);
+
+    if (showPickup && nearestUnpickedBatch) {
+      const bid = nearestUnpickedBatch.batchId || nearestUnpickedBatch.id;
+      const batchCount = assignedOrders.filter(o => (o.batchId || o.id) === bid).length;
+      const branchName = nearestUnpickedBatch.branchName || nearestUnpickedBatch.branchDetail?.name || branches?.[nearestUnpickedBatch.branchId]?.name || (lang === 'bn' ? 'শাখা' : 'Branch');
+      return {
+        type: 'pickup',
+        targetId: bid,
+        distance: minBranchDist,
+        title: lang === 'bn' ? '💡 সাজেস্টেড পিকআপ ট্রিপ' : '💡 Suggested Pickup Trip',
+        sub: lang === 'bn' 
+          ? `"${branchName}" আপনার থেকে ${minBranchDist >= 1000 ? `${(minBranchDist/1000).toFixed(1)} km` : `${Math.round(minBranchDist)} m`} দূরে। (${batchCount}টি অর্ডার)` 
+          : `"${branchName}" is ${minBranchDist >= 1000 ? `${(minBranchDist/1000).toFixed(1)} km` : `${Math.round(minBranchDist)} m`} away. (${batchCount} orders)`,
+      };
+    } else if (nearestPickedOrder) {
+      const bid = nearestPickedOrder.batchId || nearestPickedOrder.id;
+      return {
+        type: 'delivery',
+        targetId: bid,
+        orderId: nearestPickedOrder.id,
+        distance: minCustomerDist,
+        title: lang === 'bn' ? '🛵 সাজেস্টেড ডেলিভারি' : '🛵 Suggested Delivery',
+        sub: lang === 'bn' ? `কাস্টমার #${nearestPickedOrder.id} আপনার থেকে ${minCustomerDist >= 1000 ? `${(minCustomerDist/1000).toFixed(1)} km` : `${Math.round(minCustomerDist)} m`} দূরে।` : `Customer #${nearestPickedOrder.id} is ${minCustomerDist >= 1000 ? `${(minCustomerDist/1000).toFixed(1)} km` : `${Math.round(minCustomerDist)} m`} away.`,
+      };
+    }
+
+    return null;
+  }, [assignedOrders, livePos, lang, branches]);
+
+
 
   const lastBatchRef = useRef<any>(null);
   const stableBatch = useMemo(() => {
@@ -351,24 +422,6 @@ export default function HomePage() {
             deliveredCount={deliveredOrders.length}
             insets={insets}
           />
-        ) : viewMode === 'map' ? (
-          <RouteOverviewMap
-            assignedOrders={assignedOrders}
-            branches={branches}
-            livePos={livePos}
-            heading={heading}
-            incomingOrder={newOrderPopup}
-            onClose={() => setViewMode('list')}
-            onOpenOrder={(batch: any) => { setActiveBatchId(batch[0]?.batchId || batch[0]?.id); }}
-            rider={rider}
-            dutyStatus={dutyStatus}
-            onToggleDuty={toggleDuty}
-            stats={stats}
-            onOpenStats={setActiveStatDrawer}
-            onOpenReviews={() => setShowReviewsDrawer(true)}
-            onAcceptOrder={handleAcceptOrder}
-            onRejectOrder={handleRejectOrder}
-          />
         ) : (
           <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 100 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { }} />}>
             <View style={{ padding: 20, paddingTop: insets.top + 10 }}>
@@ -382,101 +435,258 @@ export default function HomePage() {
                 </TouchableOpacity>
               </View>
 
-              {/* Stat Grid */}
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 24 }}>
+              {/* Premium Mini Stat Row */}
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 4, marginBottom: 10, width: '100%' }}>
                 {[
-                  { label: t('stat_delivered'), value: deliveredOrders.length, unit: t('unit_orders'), icon: ShoppingBag, color: '#38bdf8', bg: T.cardB, onClick: () => setActiveStatDrawer('today') },
-                  { label: t('home_cash_in_hand'), value: `৳${holdingBalance.toLocaleString()}`, unit: null, icon: Banknote, color: T.accent, bg: T.cardA, onClick: () => setActiveStatDrawer('cash') },
-                  { label: t('home_total_delivery'), value: ctxTotalDelivered, unit: t('unit_orders'), icon: TrendingUp, color: '#22d47a', bg: T.cardC, onClick: () => setActiveStatDrawer('total') },
-                  { label: t('home_rating'), value: rating ? rating.toFixed(1) : '—', unit: rating ? '/ 5' : null, icon: Star, color: '#f59e0b', bg: T.cardD, onClick: () => setShowReviewsDrawer(true) },
+                  { label: t('stat_delivered'), value: deliveredOrders.length, icon: ShoppingBag, color: '#38bdf8', bg: T.cardB, onClick: () => setActiveStatDrawer('today') },
+                  { label: t('home_cash_in_hand'), value: `৳${holdingBalance.toLocaleString()}`, icon: Banknote, color: T.accent, bg: T.cardA, onClick: () => setActiveStatDrawer('cash') },
+                  { label: t('home_total_delivery'), value: ctxTotalDelivered, icon: TrendingUp, color: '#22d47a', bg: T.cardC, onClick: () => setActiveStatDrawer('total') },
+                  { label: t('home_rating'), value: rating ? rating.toFixed(1) : '—', icon: Star, color: '#f59e0b', bg: T.cardD, onClick: () => setShowReviewsDrawer(true) },
                 ].map((card, idx) => (
                   <TouchableOpacity
                     key={idx}
                     onPress={card.onClick}
-                    style={{ width: (width - 52) / 2, backgroundColor: card.bg, borderRadius: 24, padding: 16, borderWidth: 1, borderColor: `${card.color}15`, minHeight: 110, justifyContent: 'space-between' }}
+                    style={{
+                      flex: 1,
+                      maxWidth: '24%',
+                      backgroundColor: card.bg,
+                      borderRadius: 20,
+                      paddingVertical: 7,
+                      paddingHorizontal: 2,
+                      borderWidth: 1,
+                      borderColor: T.border,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      shadowColor: card.color,
+                      shadowOpacity: isDark ? 0.05 : 0.01,
+                      shadowRadius: 2,
+                      elevation: 1
+                    }}
                   >
-                    <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: `${card.color}15`, alignItems: 'center', justifyContent: 'center' }}>
-                      <card.icon size={18} color={card.color} strokeWidth={2.5} />
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginBottom: 1 }}>
+                      <card.icon size={10} color={card.color} strokeWidth={2.5} />
+                      <Text style={{ fontSize: 10, fontWeight: '900', color: T.text }} numberOfLines={1} adjustsFontSizeToFit>
+                        {card.value}
+                      </Text>
                     </View>
-                    <View>
-                      <Text style={{ fontSize: 10, fontWeight: '800', color: T.sub, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>{card.label}</Text>
-                      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 4 }}>
-                        <Text style={{ fontSize: 20, fontWeight: '900', color: T.text }}>{card.value}</Text>
-                        {card.unit && <Text style={{ fontSize: 10, fontWeight: '700', color: T.sub }}>{card.unit}</Text>}
-                      </View>
-                    </View>
+                    <Text 
+                      style={{ fontSize: 7, fontWeight: '900', color: T.sub, textTransform: 'uppercase', letterSpacing: 0.1, textAlign: 'center' }} 
+                      numberOfLines={1} 
+                      adjustsFontSizeToFit
+                    >
+                      {card.label}
+                    </Text>
                   </TouchableOpacity>
                 ))}
               </View>
 
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                 <Text style={{ fontFamily: font, fontSize: 18, fontWeight: '800', color: T.text }}>{t('orders_live')}</Text>
-                <TouchableOpacity onPress={() => setViewMode(viewMode === 'list' ? 'map' : 'list')} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: T.hi, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, borderWidth: 1, borderColor: T.border }}>
-                  <MapIcon size={14} color={T.accent} />
-                  <Text style={{ fontSize: 11, fontWeight: '800', color: T.text, textTransform: 'uppercase' }}>{viewMode === 'list' ? t('home_map') : t('home_list')}</Text>
-                </TouchableOpacity>
               </View>
             </View>
             <View style={{ paddingHorizontal: 20 }}>
-              {groupedAssignedOrders.length > 0 ? groupedAssignedOrders.map((batch: any) => {
-                const primaryOrder = batch[0];
-                const s = getS(primaryOrder.status, lang, isDark);
-                return (
-                  <TouchableOpacity
-                    key={primaryOrder.id}
-                    onPress={() => {
-                      const bid = primaryOrder.batchId || primaryOrder.id;
-                      setActiveBatchId(bid);
-                      setIsMinimized(false);
-                    }}
-                    style={{ backgroundColor: T.surface, borderWidth: 1, borderColor: `${s.color}20`, borderRadius: 16, padding: 14, marginBottom: 12 }}
-                  >
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <PulseDot color={s.color} />
-                        <Text style={{ fontSize: 11, fontWeight: '800', color: s.color, textTransform: 'uppercase', fontFamily: font }}>
-                          {batch.length > 1 ? (lang === 'bn' ? `${batch.length} ${t('home_batch_label')}` : `BATCH OF ${batch.length}`) : s.labelText}
-                        </Text>
-                      </View>
-                      <Text style={{ fontSize: 16, fontWeight: '800', color: T.text, fontFamily: font }}>৳{batch.reduce((sum: number, o: any) => sum + Number(o.totalAmount || 0), 0)}</Text>
-                    </View>
-
-                    <Text style={{ fontSize: 13, fontWeight: '800', color: T.text, marginTop: 8, fontFamily: font }}>
-                      #{batch.map((o: any) => o.orderSeq || o.id.slice(-5)).join(', #')}
-                    </Text>
-
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6, marginTop: 10 }}>
-                      <View style={{ flex: 1 }}>
-                        <BranchName branchId={primaryOrder.branchId} font={font} color={T.text} />
-                      </View>
-                      <Text style={{ color: s.color, fontSize: 12, opacity: 0.7 }}>→</Text>
-                      <View style={{ flex: 1.2 }}>
-                        <Text style={{ fontSize: 11, fontWeight: '600', color: T.text, fontFamily: font }} numberOfLines={1}>
-                          {batch.length > 1 ? t('home_multiple_dest') : primaryOrder.customer?.address || '—'}
-                        </Text>
-                      </View>
-                    </View>
-
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <ShoppingBag size={12} color={T.sub as string} />
-                        <Text style={{ fontSize: 10, fontWeight: '600', color: T.sub, fontFamily: font }}>
-                          {batch.reduce((count: number, o: any) => count + (o.items?.length || 0), 0)} {t('home_total_items')}
-                        </Text>
-                      </View>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                        <View style={{ position: 'relative' }}>
-                          <MessageSquare size={16} color={T.sub as string} />
-                          <UnreadBadge orderId={primaryOrder.id} bg={T.surface} />
+              {assignedOrders.length > 0 ? (
+                <View style={{ gap: 20 }}>
+                  {/* SMART RECOMMENDATION BANNER */}
+                  {smartRecommendation && (
+                    <TouchableOpacity
+                      onPress={() => {
+                        setActiveBatchId(smartRecommendation.targetId);
+                        setIsMinimized(false);
+                      }}
+                      style={{
+                        backgroundColor: T.green,
+                        borderRadius: 24,
+                        padding: 16,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 12,
+                        marginBottom: 10
+                      }}
+                    >
+                      <View style={{ flex: 1, gap: 4 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#fff' }} />
+                          <Text style={{ fontFamily: font, fontSize: 13, fontWeight: '900', color: '#fff', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                            {smartRecommendation.title}
+                          </Text>
                         </View>
-                        <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: `${s.color}15`, alignItems: 'center', justifyContent: 'center' }}>
-                          <ChevronRight size={15} color={s.color} />
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: 'rgba(255,255,255,0.95)' }}>
+                          {smartRecommendation.sub}
+                        </Text>
+                      </View>
+                      <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' }}>
+                        <ChevronRight size={20} color="#fff" strokeWidth={2.5} />
+                      </View>
+                    </TouchableOpacity>
+                  )}
+
+                  {/* BATCH TRIPS SECTION */}
+                  {batchGroups.length > 0 && (
+                    <View style={{ gap: 10 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                        <View style={{ width: 4, height: 16, backgroundColor: T.accent, borderRadius: 2 }} />
+                        <Text style={{ fontFamily: font, fontSize: 14, fontWeight: '800', color: T.sub, textTransform: 'uppercase', letterSpacing: 1 }}>
+                          {lang === 'bn' ? 'ব্যাচ ট্রিপস' : 'Batch Trips'}
+                        </Text>
+                        <View style={{ backgroundColor: `${T.accent}15`, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2 }}>
+                          <Text style={{ fontSize: 10, fontWeight: '800', color: T.accent }}>{batchGroups.length}</Text>
                         </View>
                       </View>
+                      {batchGroups.map((batch: any) => {
+                        const primaryOrder = batch[0];
+                        const s = getS(primaryOrder.status, lang, isDark);
+                        return (
+                          <TouchableOpacity
+                            key={primaryOrder.id}
+                            onPress={() => {
+                              const bid = primaryOrder.batchId || primaryOrder.id;
+                              setActiveBatchId(bid);
+                              setIsMinimized(false);
+                            }}
+                            style={{ backgroundColor: T.surface, borderWidth: 1, borderColor: `${s.color}20`, borderRadius: 16, padding: 10, marginBottom: 3 }}
+                          >
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                <PulseDot color={s.color} />
+                                <Text style={{ fontSize: 10.5, fontWeight: '800', color: s.color, textTransform: 'uppercase', fontFamily: font }}>
+                                  {lang === 'bn' ? `${batch.length}টি অর্ডারের ব্যাচ` : `BATCH OF ${batch.length}`}
+                                </Text>
+                              </View>
+                              <Text style={{ fontSize: 15, fontWeight: '800', color: T.text, fontFamily: font }}>৳{batch.reduce((sum: number, o: any) => sum + Number(o.totalAmount || 0), 0)}</Text>
+                            </View>
+
+                            {/* List of orders in the batch with Deliver Solo button */}
+                            <View style={{ gap: 5, marginTop: 6, borderBottomWidth: 1, borderBottomColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)', paddingBottom: 6 }}>
+                              {batch.map((o: any) => (
+                                <View key={o.id} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)', padding: 5, borderRadius: 8, borderWidth: 1, borderColor: T.border }}>
+                                  <View style={{ flex: 1, marginRight: 6 }}>
+                                    <Text style={{ fontSize: 11, fontWeight: '800', color: T.text, fontFamily: font }}>#{o.id}</Text>
+                                    <Text style={{ fontSize: 9, color: T.sub, fontFamily: font }} numberOfLines={1}>{o.customerName || 'Customer'}</Text>
+                                  </View>
+                                  <TouchableOpacity 
+                                    onPress={() => handleUnbatch(o.id)}
+                                    style={{ backgroundColor: `${T.accent}12`, borderWidth: 1, borderColor: `${T.accent}30`, paddingVertical: 3, paddingHorizontal: 6, borderRadius: 5 }}
+                                  >
+                                    <Text style={{ fontSize: 8.5, fontWeight: '900', color: T.accent, textTransform: 'uppercase', fontFamily: font }}>
+                                      {lang === 'bn' ? 'আলাদা করুন' : 'Deliver Solo'}
+                                    </Text>
+                                  </TouchableOpacity>
+                                </View>
+                              ))}
+                            </View>
+
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, marginTop: 6 }}>
+                              <View style={{ flex: 1 }}>
+                                <BranchName branchId={primaryOrder.branchId} font={font} color={T.text} />
+                              </View>
+                              <Text style={{ color: s.color, fontSize: 11, opacity: 0.7 }}>→</Text>
+                              <View style={{ flex: 1.2 }}>
+                                <Text style={{ fontSize: 10, fontWeight: '600', color: T.text, fontFamily: font }} numberOfLines={1}>
+                                  {t('home_multiple_dest')}
+                                </Text>
+                              </View>
+                            </View>
+
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                <ShoppingBag size={11} color={T.sub as string} />
+                                <Text style={{ fontSize: 9.5, fontWeight: '600', color: T.sub, fontFamily: font }}>
+                                  {batch.reduce((count: number, o: any) => count + (o.items?.length || 0), 0)} {t('home_total_items')}
+                                </Text>
+                              </View>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                                <View style={{ position: 'relative' }}>
+                                  <MessageSquare size={14} color={T.sub as string} />
+                                  <UnreadBadge orderId={primaryOrder.id} bg={T.surface} />
+                                </View>
+                                <View style={{ width: 24, height: 24, borderRadius: 6, backgroundColor: `${s.color}15`, alignItems: 'center', justifyContent: 'center' }}>
+                                  <ChevronRight size={13} color={s.color} />
+                                </View>
+                              </View>
+                            </View>
+                          </TouchableOpacity>
+                        );
+                      })}
                     </View>
-                  </TouchableOpacity>
-                );
-              }) : (
+                  )}
+
+                  {/* SOLO ORDERS SECTION */}
+                  {soloGroups.length > 0 && (
+                    <View style={{ gap: 10, marginTop: 8 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                        <View style={{ width: 4, height: 16, backgroundColor: T.green, borderRadius: 2 }} />
+                        <Text style={{ fontFamily: font, fontSize: 14, fontWeight: '800', color: T.sub, textTransform: 'uppercase', letterSpacing: 1 }}>
+                          {lang === 'bn' ? 'একক অর্ডারসমূহ' : 'Solo Orders'}
+                        </Text>
+                        <View style={{ backgroundColor: `${T.green}15`, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2 }}>
+                          <Text style={{ fontSize: 10, fontWeight: '800', color: T.green }}>{soloGroups.length}</Text>
+                        </View>
+                      </View>
+                      {soloGroups.map((batch: any) => {
+                        const primaryOrder = batch[0];
+                        const s = getS(primaryOrder.status, lang, isDark);
+                        return (
+                          <TouchableOpacity
+                            key={primaryOrder.id}
+                            onPress={() => {
+                              const bid = primaryOrder.batchId || primaryOrder.id;
+                              setActiveBatchId(bid);
+                              setIsMinimized(false);
+                            }}
+                            style={{ backgroundColor: T.surface, borderWidth: 1, borderColor: `${s.color}20`, borderRadius: 16, padding: 14, marginBottom: 4 }}
+                          >
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                <PulseDot color={s.color} />
+                                <Text style={{ fontSize: 11, fontWeight: '800', color: s.color, textTransform: 'uppercase', fontFamily: font }}>
+                                  {s.labelText}
+                                </Text>
+                              </View>
+                              <Text style={{ fontSize: 16, fontWeight: '800', color: T.text, fontFamily: font }}>৳{primaryOrder.totalAmount || 0}</Text>
+                            </View>
+
+                            <Text style={{ fontSize: 13, fontWeight: '800', color: T.text, marginTop: 8, fontFamily: font }}>
+                              #{primaryOrder.id}
+                            </Text>
+
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6, marginTop: 10 }}>
+                              <View style={{ flex: 1 }}>
+                                <BranchName branchId={primaryOrder.branchId} font={font} color={T.text} />
+                              </View>
+                              <Text style={{ color: s.color, fontSize: 12, opacity: 0.7 }}>→</Text>
+                              <View style={{ flex: 1.2 }}>
+                                <Text style={{ fontSize: 11, fontWeight: '600', color: T.text, fontFamily: font }} numberOfLines={1}>
+                                  {primaryOrder.customer?.address || '—'}
+                                </Text>
+                              </View>
+                            </View>
+
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                <ShoppingBag size={12} color={T.sub as string} />
+                                <Text style={{ fontSize: 10, fontWeight: '600', color: T.sub, fontFamily: font }}>
+                                  {primaryOrder.items?.length || 0} {t('home_total_items')}
+                                </Text>
+                              </View>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                                <View style={{ position: 'relative' }}>
+                                  <MessageSquare size={16} color={T.sub as string} />
+                                  <UnreadBadge orderId={primaryOrder.id} bg={T.surface} />
+                                </View>
+                                <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: `${s.color}15`, alignItems: 'center', justifyContent: 'center' }}>
+                                  <ChevronRight size={15} color={s.color} />
+                                </View>
+                              </View>
+                            </View>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  )}
+                </View>
+              ) : (
                 <View style={{ paddingVertical: 50, alignItems: 'center', gap: 14, backgroundColor: T.surface, borderRadius: 24, borderWidth: 1.5, borderColor: T.border, borderStyle: 'dashed' }}>
                   <View style={{ width: 56, height: 56, borderRadius: 18, backgroundColor: `${T.accent as string}08`, borderWidth: 1, borderColor: `${T.accent as string}18`, alignItems: 'center', justifyContent: 'center' }}>
                     <Clock size={22} color={T.accent as string} strokeWidth={1.8} />
@@ -488,44 +698,9 @@ export default function HomePage() {
           </ScrollView>
         )}
 
-        {/* Floating Minimized Active Batch */}
-        {viewMode === 'list' && assignedOrders.length > 0 && isMinimized && (
-          <View style={{ position: 'absolute', bottom: insets.bottom + 95, left: 20, right: 20, zIndex: 100 }}>
-            <TouchableOpacity
-              onPress={() => setIsMinimized(false)}
-              style={{ height: 72, borderRadius: 24, backgroundColor: T.accent as string, overflow: 'hidden', elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.3, shadowRadius: 20 }}
-            >
-              <LinearGradient colors={isDark ? ['#22d47a', '#16a85a'] : ['#22d47a', '#10b981']} style={StyleSheet.absoluteFillObject} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} />
 
-              <ShimmerEffect />
 
-              <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-                  <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(0,0,0,0.15)', alignItems: 'center', justifyContent: 'center' }}>
-                    <PackageCheck size={22} color="#fff" strokeWidth={2.5} />
-                    <UnreadBadge orderId={assignedOrders[0]?.id} bg={T.accent} />
-                  </View>
-                  <View>
-                    <Text style={{ fontSize: 9, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1.5, color: 'rgba(255,255,255,0.7)', fontFamily: font }}>{t('resume_delivery')}</Text>
-                    <Text style={{ fontSize: 17, fontWeight: '900', color: '#fff', fontFamily: font, marginTop: -2 }}>
-                      Trip #{assignedOrders[0]?.batchId?.slice(-4) || assignedOrders[0]?.id.slice(-4)} ({assignedOrders.length} Drop)
-                    </Text>
-                  </View>
-                </View>
-                <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' }}>
-                  <ChevronRight size={18} color="#fff" strokeWidth={3} />
-                </View>
-              </View>
-            </TouchableOpacity>
-          </View>
-        )}
 
-        {/* New Order Popup */}
-        {isOnline && newOrderPopup && (
-          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 999, justifyContent: 'flex-end', paddingBottom: 40, paddingHorizontal: 16 }]}>
-            <OrderPopup order={newOrderPopup} onAccept={() => handleAcceptOrder(newOrderPopup.id)} onSkip={() => setNewOrderPopup(null)} />
-          </View>
-        )}
 
         {/* Warning Modal */}
         {activeOrderWarning && (
@@ -581,7 +756,7 @@ export default function HomePage() {
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
                         <View>
                           <Text style={{ fontSize: 9, fontWeight: '800', color: T.accent, textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 4 }}>
-                            #{item.seq || item.id?.slice(-8) || 'N/A'}
+                            #{item.id || 'N/A'}
                           </Text>
                           <Text style={{ fontSize: 15, fontWeight: '700', color: T.text }}>{item.customer?.name || 'Customer'}</Text>
                         </View>
@@ -687,6 +862,7 @@ export default function HomePage() {
             batchOrders={groupedAssignedOrders.find(g => (g[0].batchId || g[0].id) === activeBatchId) || []}
             onMinimize={() => setIsMinimized(true)}
             onFinish={() => setActiveBatchId(null)}
+            onActiveBatchChange={(newId: string) => setActiveBatchId(newId)}
           />
         </View>
       )}

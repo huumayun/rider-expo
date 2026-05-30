@@ -81,7 +81,20 @@ function todayStart(): Date {
 // ─── Provider ─────────────────────────────────────────────────────────────────
 export function RiderDataProvider({ children }: { children: ReactNode }) {
   const { rider } = useAuthStore();
-  const { setActiveOrder, setNewOrderPopup, activeOrder: storedActiveOrder } = useOrderStore();
+  const { setActiveOrder, setNewOrderPopup } = useOrderStore();
+  const seenPopupOrderIdsRef = React.useRef<string[]>([]);
+
+  useEffect(() => {
+    AsyncStorage.getItem('seen_popup_order_ids').then(val => {
+      if (val) {
+        try {
+          seenPopupOrderIdsRef.current = JSON.parse(val);
+        } catch (e) {
+          seenPopupOrderIdsRef.current = [];
+        }
+      }
+    });
+  }, []);
 
   const [activeOrders, setActiveOrders] = useState<Order[]>([]);
   const [completedOrders, setCompletedOrders] = useState<Order[]>([]);
@@ -129,7 +142,12 @@ export function RiderDataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (transactions.length === 0) return;
     AsyncStorage.getItem('last_wallet_view').then(val => {
-      const lastView = Number(val || 0);
+      let lastView = Number(val || 0);
+      // If never viewed before, set lastView to now so we don't show old history as unread
+      if (lastView === 0) {
+        lastView = Date.now();
+        AsyncStorage.setItem('last_wallet_view', lastView.toString());
+      }
       const newTxCount = transactions.filter(tx => {
         const t = tx.createdAt?.toMillis?.() || (tx.createdAt as any)?.seconds * 1000 || 0;
         return t > lastView;
@@ -167,8 +185,15 @@ export function RiderDataProvider({ children }: { children: ReactNode }) {
 
       // New order popup: only show if status is 'assigned' and not already seen
       const newOrder = orders.find((o: any) => o.status === 'assigned');
-      if (newOrder && storedActiveOrder?.id !== newOrder.id) {
-        setNewOrderPopup(newOrder);
+      if (newOrder) {
+        if (!seenPopupOrderIdsRef.current.includes(newOrder.id)) {
+          const nextSeen = [...seenPopupOrderIdsRef.current, newOrder.id].slice(-50);
+          seenPopupOrderIdsRef.current = nextSeen;
+          AsyncStorage.setItem('seen_popup_order_ids', JSON.stringify(nextSeen)).catch(err => {
+            console.log('Error saving seen popup IDs:', err);
+          });
+          setNewOrderPopup(newOrder);
+        }
       }
 
       setLoading(false);

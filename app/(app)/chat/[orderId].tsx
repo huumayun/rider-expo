@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, TextInput, FlatList, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, Platform, Image,
+  KeyboardAvoidingView, Platform, Image, Linking, ActivityIndicator
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Check, CheckCheck, Phone, Camera, Send, ArrowLeft } from 'lucide-react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useApp } from '@/context/AppContext';
 import { useAuthStore } from '@/store/authStore';
@@ -11,9 +12,9 @@ import { useChat } from '@/hooks/useChat';
 import { useImageUpload } from '@/hooks/useImageUpload';
 
 export default function ChatPage() {
-  const { T, t, font } = useApp();
+  const { T, t, font, lang } = useApp();
   const { rider } = useAuthStore();
-  const { orderId } = useLocalSearchParams<{ orderId?: string }>();
+  const { orderId, phone, name } = useLocalSearchParams<{ orderId?: string; phone?: string; name?: string }>();
   const router = useRouter();
 
   const { messages, customerTyping, sendMessage, updateRiderTyping } = useChat(orderId || null, rider?.uid || null);
@@ -56,36 +57,53 @@ export default function ChatPage() {
               {item.text}
             </Text>
           )}
-          <Text style={[styles.msgTime, { color: isMe ? 'rgba(255,255,255,0.7)' : T.sub as any }]}>
-            {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-          </Text>
+          <View style={styles.timeRow}>
+            <Text style={[styles.msgTime, { color: isMe ? 'rgba(255,255,255,0.7)' : T.sub as any }]}>
+              {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </Text>
+            {item.read
+              ? <CheckCheck size={14} color={isMe ? "#fff" : T.accent as any} style={{ marginLeft: 4 }} />
+              : <Check size={14} color={isMe ? "rgba(255,255,255,0.6)" : T.sub as any} style={{ marginLeft: 4 }} />
+            }
+          </View>
         </View>
       </View>
     );
   };
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: T.bg }]}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: T.bg }]} edges={['top', 'left', 'right']}>
       {/* Header */}
       <View style={[styles.header, { backgroundColor: T.surface, borderBottomColor: T.border }]}>
         <TouchableOpacity onPress={() => router.canGoBack() ? router.back() : router.replace('/(app)')} style={styles.backBtn}>
-          <Text style={{ color: T.text, fontSize: 18 }}>←</Text>
+          <ArrowLeft size={24} color={T.text as any} />
         </TouchableOpacity>
-        <View>
-          <Text style={[styles.headerTitle, { color: T.text, fontFamily: 'Nunito_700Bold' }]}>{t('chat_title')}</Text>
-          {orderId && <Text style={[styles.headerSub, { color: T.sub, fontFamily: font }]}>Order #{orderId.slice(-6)}</Text>}
+        <View style={{ flex: 1 }}>
+          <Text numberOfLines={1} style={[styles.headerTitle, { color: T.text, fontFamily: 'Nunito_700Bold' }]}>
+            {name || t('chat_title')}
+          </Text>
+          {orderId && (
+            <Text numberOfLines={1} style={[styles.headerSub, { color: T.sub, fontFamily: font }]}>
+              {orderId.startsWith('GB-') ? orderId : `#${orderId.split('-').pop()}`}
+            </Text>
+          )}
         </View>
         {customerTyping && (
-          <View style={[styles.typingBadge, { backgroundColor: '#22d47a22' }]}>
+          <View style={[styles.typingBadge, { backgroundColor: '#22d47a22', marginLeft: 0 }]}>
             <Text style={[styles.typingText, { color: T.green as any, fontFamily: font }]}>⌛ {t('chat_typing')}</Text>
           </View>
+        )}
+        {phone && (
+          <TouchableOpacity onPress={() => Linking.openURL(`tel:${phone}`)} style={styles.phoneBtn}>
+            <Phone size={20} color="#22d47a" />
+          </TouchableOpacity>
         )}
       </View>
 
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={90}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
         <FlatList
           ref={listRef}
@@ -105,7 +123,11 @@ export default function ChatPage() {
         {/* Input */}
         <View style={[styles.inputBar, { backgroundColor: T.surface, borderTopColor: T.border }]}>
           <TouchableOpacity onPress={handleImageSend} disabled={uploading} style={styles.attachBtn}>
-            <Text style={styles.attachEmoji}>{uploading ? '⌛' : '📷'}</Text>
+            {uploading ? (
+              <ActivityIndicator size="small" color="#22d47a" />
+            ) : (
+              <Camera size={24} color={T.sub as any} />
+            )}
           </TouchableOpacity>
           <TextInput
             style={[styles.input, { color: T.text as any, backgroundColor: T.hi as any, fontFamily: font }]}
@@ -120,7 +142,7 @@ export default function ChatPage() {
             disabled={!text.trim()}
             style={[styles.sendBtn, { opacity: text.trim() ? 1 : 0.4 }]}
           >
-            <Text style={styles.sendEmoji}>➤</Text>
+            <Send size={18} color="#fff" style={{ marginLeft: -2 }} />
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -140,7 +162,7 @@ const styles = StyleSheet.create({
   headerSub: { fontSize: 12, marginTop: 1 },
   typingBadge: { marginLeft: 'auto', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
   typingText: { fontSize: 11 },
-  messageList: { padding: 12, paddingBottom: 8, flexGrow: 1 },
+  messageList: { padding: 12, paddingBottom: 8 },
   msgRow: { marginBottom: 8, maxWidth: '80%' },
   msgRowMe: { alignSelf: 'flex-end' },
   msgRowThem: { alignSelf: 'flex-start' },
@@ -148,7 +170,8 @@ const styles = StyleSheet.create({
   msgBubbleMe: { borderBottomRightRadius: 4 },
   msgBubbleThem: { borderWidth: 1, borderBottomLeftRadius: 4 },
   msgText: { fontSize: 14, lineHeight: 20 },
-  msgTime: { fontSize: 10, marginTop: 4, textAlign: 'right' },
+  msgTime: { fontSize: 10 },
+  timeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', marginTop: 4 },
   chatImage: { width: 180, height: 180, borderRadius: 10 },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80, gap: 10 },
   emptyEmoji: { fontSize: 40 },
@@ -159,4 +182,5 @@ const styles = StyleSheet.create({
   input: { flex: 1, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, maxHeight: 100, fontSize: 14 },
   sendBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#22d47a', alignItems: 'center', justifyContent: 'center' },
   sendEmoji: { color: '#fff', fontSize: 16 },
+  phoneBtn: { padding: 8, marginLeft: 4 },
 });

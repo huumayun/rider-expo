@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import {
-  View, Text, StyleSheet, Animated, Dimensions, StatusBar,
+  View, StyleSheet, Animated, Dimensions, StatusBar, Text, Image,
 } from 'react-native';
 
 const { width, height } = Dimensions.get('window');
@@ -10,68 +10,109 @@ interface SplashScreenProps {
 }
 
 export function AppSplashScreen({ onFinish }: SplashScreenProps) {
-  const logoScale = useRef(new Animated.Value(0.6)).current;
-  const logoOpacity = useRef(new Animated.Value(0)).current;
-  const textOpacity = useRef(new Animated.Value(0)).current;
-  const dotAnim = useRef(new Animated.Value(0)).current;
-  const exitOpacity = useRef(new Animated.Value(1)).current;
+  const containerOpacity = useRef(new Animated.Value(1)).current;
+  const iconScale      = useRef(new Animated.Value(0.5)).current;
+  const iconOpacity    = useRef(new Animated.Value(0)).current;
+  const taglineOpacity = useRef(new Animated.Value(0)).current;
+  const taglineY       = useRef(new Animated.Value(10)).current;
+  const glowOpacity    = useRef(new Animated.Value(0)).current;
+  const glowScale      = useRef(new Animated.Value(0.6)).current;
+  const dotsOpacity    = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.sequence([
-      // Logo pop in
+      // 1. Glow ring expands first
       Animated.parallel([
-        Animated.spring(logoScale, { toValue: 1, tension: 60, friction: 8, useNativeDriver: true }),
-        Animated.timing(logoOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
+        Animated.timing(glowOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
+        Animated.spring(glowScale, { toValue: 1, tension: 50, friction: 7, useNativeDriver: true }),
       ]),
-      // Text fade in
-      Animated.timing(textOpacity, { toValue: 1, duration: 350, useNativeDriver: true }),
-      // Loading dots pulse
-      Animated.timing(dotAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
-      // Exit fade
-      Animated.delay(200),
-      Animated.timing(exitOpacity, { toValue: 0, duration: 350, useNativeDriver: true }),
+      // 2. Icon pops in with spring bounce
+      Animated.parallel([
+        Animated.spring(iconScale, { toValue: 1, tension: 55, friction: 6, useNativeDriver: true }),
+        Animated.timing(iconOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
+      ]),
+      // 3. Tagline slides up
+      Animated.delay(150),
+      Animated.parallel([
+        Animated.timing(taglineOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
+        Animated.timing(taglineY, { toValue: 0, duration: 400, useNativeDriver: true }),
+      ]),
+      // 4. Loading dots
+      Animated.delay(100),
+      Animated.timing(dotsOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
+      // 5. Hold
+      Animated.delay(900),
+      // 6. Fade out
+      Animated.timing(containerOpacity, { toValue: 0, duration: 450, useNativeDriver: true }),
     ]).start(() => onFinish?.());
   }, []);
 
-  const dot1Opacity = dotAnim.interpolate({ inputRange: [0, 0.33, 1], outputRange: [0.2, 1, 0.2] });
-  const dot2Opacity = dotAnim.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.2, 1, 0.2] });
-  const dot3Opacity = dotAnim.interpolate({ inputRange: [0, 0.66, 1], outputRange: [0.2, 1, 0.2] });
-
   return (
-    <Animated.View style={[styles.container, { opacity: exitOpacity }]}>
+    <Animated.View style={[styles.container, { opacity: containerOpacity }]}>
       <StatusBar barStyle="light-content" backgroundColor="#07070f" />
 
       {/* Ambient blobs */}
       <View style={styles.blob1} />
       <View style={styles.blob2} />
 
-      {/* Logo */}
-      <Animated.View style={[styles.logoWrap, {
-        transform: [{ scale: logoScale }],
-        opacity: logoOpacity,
-      }]}>
-        <View style={styles.logoBox}>
-          <Text style={styles.logoEmoji}>🛵</Text>
-        </View>
+      {/* Glow ring behind icon */}
+      <Animated.View
+        style={[
+          styles.glowRing,
+          {
+            opacity: glowOpacity,
+            transform: [{ scale: glowScale }],
+          },
+        ]}
+      />
+
+      {/* App icon — full image, no clipping */}
+      <Animated.View
+        style={[
+          styles.iconWrap,
+          {
+            opacity: iconOpacity,
+            transform: [{ scale: iconScale }],
+          },
+        ]}
+      >
+        <Image
+          source={require('../../assets/adaptive-icon.png')}
+          style={styles.icon}
+          resizeMode="contain"
+        />
       </Animated.View>
 
-      {/* Brand name */}
-      <Animated.View style={{ opacity: textOpacity, alignItems: 'center' }}>
-        <Text style={styles.brand}>
-          Graam<Text style={{ color: '#22d47a' }}>Bazaar</Text>
-        </Text>
+      {/* Tagline */}
+      <Animated.View
+        style={[
+          styles.taglineWrap,
+          { opacity: taglineOpacity, transform: [{ translateY: taglineY }] },
+        ]}
+      >
         <Text style={styles.tagline}>রাইডার পোর্টাল</Text>
       </Animated.View>
 
       {/* Loading dots */}
-      <View style={styles.dotsRow}>
-        <Animated.View style={[styles.dot, { opacity: dot1Opacity }]} />
-        <Animated.View style={[styles.dot, { opacity: dot2Opacity }]} />
-        <Animated.View style={[styles.dot, { opacity: dot3Opacity }]} />
+      <Animated.View style={[styles.dotsRow, { opacity: dotsOpacity }]}>
+        <View style={styles.dot} />
+        <View style={[styles.dot, styles.dotMid]} />
+        <View style={styles.dot} />
+      </Animated.View>
+
+      {/* Bottom brand */}
+      <View style={styles.bottomBar}>
+        <View style={styles.bottomDot} />
+        <Text style={styles.bottomText}>
+          Graam<Text style={styles.bottomGreen}>Bazaar</Text>
+        </Text>
+        <View style={styles.bottomDot} />
       </View>
     </Animated.View>
   );
 }
+
+const ICON_SIZE = width * 0.52;
 
 const styles = StyleSheet.create({
   container: {
@@ -80,46 +121,83 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 999,
-    gap: 16,
   },
   blob1: {
     position: 'absolute',
-    width: width * 0.7, height: width * 0.7,
-    borderRadius: width * 0.35,
+    width: width * 0.8, height: width * 0.8,
+    borderRadius: width * 0.4,
     backgroundColor: '#22d47a',
-    opacity: 0.04,
-    top: -width * 0.2, left: -width * 0.15,
+    opacity: 0.05,
+    top: -width * 0.25, left: -width * 0.2,
   },
   blob2: {
     position: 'absolute',
-    width: width * 0.8, height: width * 0.8,
-    borderRadius: width * 0.4,
+    width: width * 0.9, height: width * 0.9,
+    borderRadius: width * 0.45,
     backgroundColor: '#0ea5e9',
     opacity: 0.04,
-    bottom: -width * 0.3, right: -width * 0.2,
+    bottom: -width * 0.35, right: -width * 0.25,
   },
-  logoWrap: { marginBottom: 8 },
-  logoBox: {
-    width: 96, height: 96, borderRadius: 28,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
-    alignItems: 'center', justifyContent: 'center',
+  glowRing: {
+    position: 'absolute',
+    width: ICON_SIZE + 40,
+    height: ICON_SIZE + 40,
+    borderRadius: (ICON_SIZE + 40) / 2,
+    borderWidth: 1.5,
+    borderColor: '#22d47a',
+    opacity: 0.25,
   },
-  logoEmoji: { fontSize: 44 },
-  brand: {
-    fontSize: 32, fontWeight: '900',
-    color: '#f8fafc', letterSpacing: 0.5,
+  iconWrap: {
+    width: ICON_SIZE,
+    height: ICON_SIZE,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  icon: {
+    width: ICON_SIZE,
+    height: ICON_SIZE,
+  },
+  taglineWrap: {
+    marginTop: 20,
+    alignItems: 'center',
   },
   tagline: {
-    fontSize: 13, color: '#64748b',
-    marginTop: 4, letterSpacing: 2,
+    fontSize: 13,
+    color: '#64748b',
+    letterSpacing: 3,
   },
   dotsRow: {
-    flexDirection: 'row', gap: 8,
-    position: 'absolute', bottom: height * 0.12,
+    flexDirection: 'row',
+    gap: 7,
+    marginTop: 28,
   },
   dot: {
-    width: 6, height: 6, borderRadius: 3,
+    width: 5, height: 5,
+    borderRadius: 2.5,
     backgroundColor: '#22d47a',
+    opacity: 0.5,
   },
+  dotMid: {
+    opacity: 1,
+  },
+  bottomBar: {
+    position: 'absolute',
+    bottom: height * 0.08,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  bottomDot: {
+    width: 4, height: 4,
+    borderRadius: 2,
+    backgroundColor: '#22d47a',
+    opacity: 0.5,
+  },
+  bottomText: {
+    fontSize: 13,
+    color: '#475569',
+    fontWeight: '600',
+    letterSpacing: 0.5,
+  },
+  bottomGreen: { color: '#22d47a' },
 });

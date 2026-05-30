@@ -58,6 +58,59 @@ const timeAgo = (ts: any, t: any) => {
   return `${Math.floor(s / 86400)}${t('notif_day_ago')}`;
 };
 
+const groupNotifsByDate = (notifs: any[], lang: string, t: any) => {
+  const groups: Record<string, any[]> = {};
+  
+  const todayStr = lang === 'bn' ? 'আজকে' : 'Today';
+  const yesterdayStr = lang === 'bn' ? 'গতকাল' : 'Yesterday';
+  
+  const getDayString = (ts: any) => {
+    if (!ts) return lang === 'bn' ? 'অন্যান্য' : 'Others';
+    const ms = typeof ts === 'number' ? ts : ts?.seconds ? ts.seconds * 1000 : ts?.toDate ? ts.toDate().getTime() : new Date(ts).getTime();
+    
+    const date = new Date(ms);
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(today.getDate() - 1);
+    
+    if (date.toDateString() === today.toDateString()) {
+      return todayStr;
+    } else if (date.toDateString() === yesterday.toDateString()) {
+      return yesterdayStr;
+    } else {
+      if (lang === 'bn') {
+        const months = ['জানুয়ারি', 'ফেব্রুয়ারি', 'মার্চ', 'এপ্রিল', 'মে', 'জুন', 'জুলাই', 'আগস্ট', 'সেপ্টেম্বর', 'অক্টোবর', 'নভেম্বর', 'ডিসেম্বর'];
+        const toBnDigits = (num: number) => String(num).replace(/\d/g, d => '০১২৩৪৫৬৭৮৯'[Number(d)]);
+        return `${toBnDigits(date.getDate())} ${months[date.getMonth()]} ${toBnDigits(date.getFullYear())}`;
+      } else {
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        return `${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear()}`;
+      }
+    }
+  };
+  
+  notifs.forEach(n => {
+    const day = getDayString(n.ts);
+    if (!groups[day]) groups[day] = [];
+    groups[day].push(n);
+  });
+  
+  const sortedKeys = Object.keys(groups).sort((a, b) => {
+    if (a === todayStr) return -1;
+    if (b === todayStr) return 1;
+    if (a === yesterdayStr) return -1;
+    if (b === yesterdayStr) return 1;
+    
+    const tsA = groups[a][0]?.ts;
+    const tsB = groups[b][0]?.ts;
+    const msA = tsA ? (typeof tsA === 'number' ? tsA : tsA.seconds ? tsA.seconds * 1000 : tsA.toDate ? tsA.toDate().getTime() : new Date(tsA).getTime()) : 0;
+    const msB = tsB ? (typeof tsB === 'number' ? tsB : tsB.seconds ? tsB.seconds * 1000 : tsB.toDate ? tsB.toDate().getTime() : new Date(tsB).getTime()) : 0;
+    return msB - msA;
+  });
+  
+  return { keys: sortedKeys, groups };
+};
+
 const Pulse = ({ color }: { color: string }) => {
   const scale = useSharedValue(1);
   const opacity = useSharedValue(0.3);
@@ -102,9 +155,9 @@ const NotifCard = ({ notif, onDismiss, onClick, T, isDark, t, lang, font }: any)
 
   return (
     <ReAnimated.View 
-      entering={FadeInUp.springify().damping(20)}
-      exiting={FadeOutDown.springify().damping(20)}
-      layout={LinearTransition.springify().damping(25)}
+      entering={FadeInUp.duration(300)}
+      exiting={FadeOutDown.duration(200)}
+      layout={LinearTransition.duration(250)}
       style={{ marginBottom: 12 }}
     >
       <Pressable
@@ -315,8 +368,8 @@ export default function NotificationsPage() {
           return {
             id: `order_${o.id}_${o.status}`, type: o.status === 'assigned' ? 'new_order' : 'order_status',
             title: t(STATUS_LABEL_KEY[o.status]),
-            body: lang === 'bn' ? `${t('notif_order_body_bn')} #${o.seq || o.id.slice(-5)} · ${o.customer?.name || ''} · ৳${o.totalAmount || 0}` : `Order #${o.seq || o.id.slice(-5)} · ${o.customer?.name || ''} · ৳${o.totalAmount || 0}`,
-            tag: `#${o.seq || o.id.slice(-5)}`, ts: o.updatedAt || o.createdAt || null, unread: false, orderId: o.id, orderStatus: o.status,
+            body: lang === 'bn' ? `${t('notif_order_body_bn')} #${o.id} · ${o.customer?.name || ''} · ৳${o.totalAmount || 0}` : `Order #${o.id} · ${o.customer?.name || ''} · ৳${o.totalAmount || 0}`,
+            tag: `#${o.id}`, ts: o.updatedAt || o.createdAt || null, unread: false, orderId: o.id, orderStatus: o.status,
           };
         }).filter(n => !dismissedIds.current.has(n.id));
         setNotifs(prev => [...base, ...prev.filter(n => n.type === 'chat' || n.type === 'wallet')]);
@@ -333,8 +386,8 @@ export default function NotificationsPage() {
         upsert({
           id: `order_${o.id}_${o.status}`, type: o.status === 'assigned' ? 'new_order' : 'order_status',
           title: t(STATUS_LABEL_KEY[o.status]),
-          body: lang === 'bn' ? `${t('notif_order_body_bn')} #${o.seq || o.id.slice(-5)} · ${o.customer?.name || ''} · ৳${o.totalAmount || 0}` : `Order #${o.seq || o.id.slice(-5)} · ${o.customer?.name || ''} · ৳${o.totalAmount || 0}`,
-          tag: `#${o.seq || o.id.slice(-5)}`, ts: o.updatedAt || o.createdAt || null, unread: isNew, orderId: o.id, orderStatus: o.status,
+          body: lang === 'bn' ? `${t('notif_order_body_bn')} #${o.id} · ${o.customer?.name || ''} · ৳${o.totalAmount || 0}` : `Order #${o.id} · ${o.customer?.name || ''} · ৳${o.totalAmount || 0}`,
+          tag: `#${o.id}`, ts: o.updatedAt || o.createdAt || null, unread: isNew, orderId: o.id, orderStatus: o.status,
         });
       });
     }, err => { console.error('Order notif:', err); setLoading(false); });
@@ -361,7 +414,7 @@ export default function NotificationsPage() {
             id: `chat_${oid}`, type: 'chat',
             title: lang === 'bn' ? `${o.customer?.name || 'Customer'} ${t('notif_msg_from')}` : `${t('notif_msg_from')} ${o.customer?.name || 'Customer'}`,
             body: latest.text ? latest.text.slice(0, 72) : t('notif_sent_image'),
-            tag: `#${o.seq || oid.slice(-5)}`, ts: latest.timestamp || Date.now(), unread: true, badge: unread.length, orderId: oid, orderData: o,
+            tag: `#${oid}`, ts: latest.timestamp || Date.now(), unread: true, badge: unread.length, orderId: oid, orderData: o,
           });
         });
         chatListeners.current[oid] = true;
@@ -383,7 +436,7 @@ export default function NotificationsPage() {
         upsert({
           id: `wallet_${tx.id}`, type: 'wallet',
           title: isCash ? `৳${tx.amount} ${t('notif_wallet_added')}` : `৳${tx.amount} ${t('notif_wallet_sent')}`,
-          body: isCash ? `${t('notif_cash_from')} #${tx.orderSeq || 'N/A'}` : t('notif_transfer_done'),
+          body: isCash ? `${t('notif_cash_from')} #${tx.orderId || 'N/A'}` : t('notif_transfer_done'),
           tag: isCash ? t('notif_tag_credit') : t('notif_tag_transfer'),
           subType: isCash ? 'cash' : 'transfer',
           ts: tx.createdAt, unread: !isFirst && change.type === 'added',
@@ -453,7 +506,7 @@ export default function NotificationsPage() {
 
   return (
     <View style={{ flex: 1, backgroundColor: T.bg }}>
-      <ScrollView stickyHeaderIndices={[1]} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 0 }}>
+      <ScrollView stickyHeaderIndices={[1]} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 130 }}>
         {/* HEADER */}
         <View style={{ padding: 14, paddingTop: 54, paddingBottom: 10 }}>
           <LinearGradient colors={[surfHi, 'transparent']} style={StyleSheet.absoluteFillObject} />
@@ -491,28 +544,7 @@ export default function NotificationsPage() {
             </View>
           </View>
 
-          {/* Stats Grid */}
-          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 8 }}>
-            {[
-              { label: t('notif_tab_chat'),   count: unreadChat,  color: '#3b82f6', Icon: MessageSquare },
-              { label: t('notif_tab_orders'), count: unreadOrder, color: '#22d47a', Icon: Package },
-              { label: t('notif_tab_wallet'), count: walletCount, color: '#f59e0b', Icon: Banknote },
-            ].map((s, idx) => (
-              <View key={idx} style={{
-                flex: 1, backgroundColor: surf, borderWidth: 1, borderColor: s.count > 0 ? `${s.color}30` : T.border,
-                borderRadius: 14, padding: 10, elevation: s.count > 0 ? 2 : 0, shadowColor: s.color, shadowOpacity: 0.1, shadowRadius: 6,
-                shadowOffset: { width: 0, height: 2 }
-              }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                  <View style={{ width: 18, height: 18, borderRadius: 6, backgroundColor: s.count > 0 ? `${s.color}15` : `${T.border}40`, alignItems: 'center', justifyContent: 'center' }}>
-                    <s.Icon size={10} color={s.count > 0 ? s.color : T.sub} strokeWidth={2.5} />
-                  </View>
-                  <Text style={{ fontSize: 7, fontWeight: '800', color: T.sub, fontFamily: font, textTransform: 'uppercase' }}>{s.label}</Text>
-                </View>
-                <Text style={{ fontFamily: font, fontSize: 18, fontWeight: '900', color: s.count > 0 ? T.text : T.sub, opacity: s.count === 0 ? 0.2 : 1 }}>{s.count}</Text>
-              </View>
-            ))}
-          </View>
+
         </View>
 
         {/* Filter Container */}
@@ -574,9 +606,19 @@ export default function NotificationsPage() {
                     <Text style={{ fontSize: 14, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 2.5, color: T.text, fontFamily: font }}>{t('notif_empty')}</Text>
                   </View>
                 ) : (
-                  pageFiltered.map(n => (
-                    <NotifCard key={n.id} notif={n} onDismiss={dismiss} onClick={handleNotifClick} T={T} isDark={isDark} t={t} lang={lang} font={font} />
-                  ))
+                  (() => {
+                    const { keys, groups } = groupNotifsByDate(pageFiltered, lang, t);
+                    return keys.map(key => (
+                      <View key={key} style={{ marginBottom: 18 }}>
+                        <Text style={{ fontFamily: font, fontSize: 11, fontWeight: '900', color: T.accent, textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12, opacity: 0.85 }}>
+                          {key}
+                        </Text>
+                        {groups[key].map((n: any) => (
+                          <NotifCard key={n.id} notif={n} onDismiss={dismiss} onClick={handleNotifClick} T={T} isDark={isDark} t={t} lang={lang} font={font} />
+                        ))}
+                      </View>
+                    ));
+                  })()
                 )}
               </View>
             );

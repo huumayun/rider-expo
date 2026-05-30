@@ -31,10 +31,10 @@ export default React.memo(function ArrivedAtCustomerView({ order, onCancelReques
         <View style={{
           backgroundColor: cardBg,
           borderWidth: 1, borderColor: brd,
-          borderRadius: 22,
-          padding: 20,
+          borderRadius: 24,
+          padding: 24,
           overflow: 'hidden',
-          shadowColor: '#000', shadowOpacity: isDark ? 0.55 : 0.1, shadowRadius: 28, elevation: 8
+          shadowColor: '#000', shadowOpacity: isDark ? 0.3 : 0.08, shadowRadius: 32, elevation: 12
         }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
             <View style={{ width: 54, height: 54, borderRadius: 17, backgroundColor: pcDim, borderWidth: 1, borderColor: pcBrd, alignItems: 'center', justifyContent: 'center' }}>
@@ -47,14 +47,14 @@ export default React.memo(function ArrivedAtCustomerView({ order, onCancelReques
                   ? (lang === 'bn' ? 'আগেই পেমেন্ট হয়েছে' : 'Already Paid')
                   : (lang === 'bn' ? 'সংগ্রহের পরিমাণ' : 'Total Collection')}
               </Text>
-              <Text style={{ fontFamily: font, fontSize: 38, letterSpacing: 1, color: txt }}>
+              <Text adjustsFontSizeToFit numberOfLines={1} style={{ fontFamily: font, fontSize: 32, letterSpacing: 1, color: txt }}>
                 ৳{totalToCollect}
               </Text>
             </View>
 
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 7, paddingHorizontal: 14, borderRadius: 14, backgroundColor: pc, shadowColor: pc, shadowOpacity: 0.4, shadowRadius: 14, elevation: 6 }}>
-              <CreditCard size={11} color="#fff" strokeWidth={2.5} />
-              <Text style={{ color: '#fff', fontSize: 8, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1 }}>{paymentMethod}</Text>
+            <View style={{ flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 7, paddingHorizontal: 10, borderRadius: 14, backgroundColor: pc, shadowColor: pc, shadowOpacity: 0.4, shadowRadius: 14, elevation: 6 }}>
+              <CreditCard size={11} color="#fff" strokeWidth={2.5} style={{ flexShrink: 0 }} />
+              <Text adjustsFontSizeToFit numberOfLines={1} style={{ color: '#fff', fontSize: 8, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1 }}>{paymentMethod}</Text>
             </View>
           </View>
         </View>
@@ -76,7 +76,7 @@ export default React.memo(function ArrivedAtCustomerView({ order, onCancelReques
                 <Text style={{ fontSize: 8, fontWeight: '800', letterSpacing: 2.5, textTransform: 'uppercase', color: T.accent, marginBottom: 2 }}>
                   {lang === 'bn' ? 'কাস্টমার' : 'Customer'}
                 </Text>
-                <Text style={{ fontFamily: font, fontSize: 20, letterSpacing: 0.5, color: txt, textTransform: 'uppercase' }} numberOfLines={1}>
+                <Text adjustsFontSizeToFit style={{ fontFamily: font, fontSize: 18, letterSpacing: 0.5, color: txt, textTransform: 'uppercase' }} numberOfLines={1}>
                   {order.customer?.name || '—'}
                 </Text>
               </View>
@@ -96,28 +96,28 @@ export default React.memo(function ArrivedAtCustomerView({ order, onCancelReques
         </View>
 
         {/* action grid */}
-        <View style={{ flexDirection: 'row', gap: 10 }}>
-          <Pressable onPress={() => Linking.openURL(`tel:${order.customer?.phone}`)} style={{ flex: 1, backgroundColor: cardBg, borderWidth: 1, borderColor: brd, borderRadius: 18, paddingVertical: 16, paddingHorizontal: 10, alignItems: 'center', gap: 10 }}>
-            <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: `${T.accent}18`, borderWidth: 1, borderColor: `${T.accent}26`, alignItems: 'center', justifyContent: 'center' }}>
-              <Phone size={18} color={T.accent} strokeWidth={2} />
+        <View style={{ flexDirection: 'row', gap: 12 }}>
+          <Pressable onPress={() => Linking.openURL(`tel:${order.customer?.phone}`)} style={{ flex: 1, backgroundColor: cardBg, borderWidth: 1, borderColor: brd, borderRadius: 20, paddingVertical: 18, paddingHorizontal: 10, alignItems: 'center', gap: 12, shadowColor: '#000', shadowOpacity: isDark ? 0.2 : 0.04, shadowRadius: 10, elevation: 2 }}>
+            <View style={{ width: 42, height: 42, borderRadius: 14, backgroundColor: `${T.accent}18`, borderWidth: 1, borderColor: `${T.accent}26`, alignItems: 'center', justifyContent: 'center' }}>
+              <Phone size={20} color={T.accent} strokeWidth={2} />
             </View>
-            <Text style={{ fontSize: 8, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1, color: sub, textAlign: 'center' }}>
+            <Text style={{ fontSize: 9, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1, color: sub, textAlign: 'center' }}>
               {lang === 'bn' ? 'কল করুন' : 'Call'}
             </Text>
           </Pressable>
-          <View style={{ flex: 1, backgroundColor: cardBg, borderWidth: 1, borderColor: brd, borderRadius: 18, paddingVertical: 16, paddingHorizontal: 10, alignItems: 'center', gap: 10 }}>
-            <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: 'rgba(34,212,122,.1)', borderWidth: 1, borderColor: 'rgba(34,212,122,.15)', alignItems: 'center', justifyContent: 'center' }}>
-              <ShieldCheck size={18} color={T.green} strokeWidth={2} />
+          <View style={{ flex: 1, backgroundColor: cardBg, borderWidth: 1, borderColor: brd, borderRadius: 20, paddingVertical: 18, paddingHorizontal: 10, alignItems: 'center', gap: 12, shadowColor: '#000', shadowOpacity: isDark ? 0.2 : 0.04, shadowRadius: 10, elevation: 2 }}>
+            <View style={{ width: 42, height: 42, borderRadius: 14, backgroundColor: 'rgba(34,212,122,.1)', borderWidth: 1, borderColor: 'rgba(34,212,122,.15)', alignItems: 'center', justifyContent: 'center' }}>
+              <ShieldCheck size={20} color={T.green} strokeWidth={2} />
             </View>
-            <Text style={{ fontSize: 8, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1, color: sub, textAlign: 'center' }}>
+            <Text style={{ fontSize: 9, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1, color: sub, textAlign: 'center' }}>
               {lang === 'bn' ? 'ওটিপি প্রয়োজন' : 'OTP Require'}
             </Text>
           </View>
-          <Pressable onPress={onCancelRequest} style={{ flex: 1, backgroundColor: cardBg, borderWidth: 1, borderColor: brd, borderRadius: 18, paddingVertical: 16, paddingHorizontal: 10, alignItems: 'center', gap: 10 }}>
-            <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: 'rgba(248,113,113,.1)', borderWidth: 1, borderColor: 'rgba(248,113,113,.15)', alignItems: 'center', justifyContent: 'center' }}>
-              <AlertTriangle size={18} color="#f87171" strokeWidth={2} />
+          <Pressable onPress={onCancelRequest} style={{ flex: 1, backgroundColor: cardBg, borderWidth: 1, borderColor: brd, borderRadius: 20, paddingVertical: 18, paddingHorizontal: 10, alignItems: 'center', gap: 12, shadowColor: '#000', shadowOpacity: isDark ? 0.2 : 0.04, shadowRadius: 10, elevation: 2 }}>
+            <View style={{ width: 42, height: 42, borderRadius: 14, backgroundColor: 'rgba(248,113,113,.1)', borderWidth: 1, borderColor: 'rgba(248,113,113,.15)', alignItems: 'center', justifyContent: 'center' }}>
+              <AlertTriangle size={20} color="#f87171" strokeWidth={2} />
             </View>
-            <Text style={{ fontSize: 8, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1, color: sub, textAlign: 'center' }}>
+            <Text style={{ fontSize: 9, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1, color: sub, textAlign: 'center' }}>
               {lang === 'bn' ? 'ক্যান্সেল' : 'Report Issue'}
             </Text>
           </Pressable>

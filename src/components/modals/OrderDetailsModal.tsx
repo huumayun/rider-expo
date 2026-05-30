@@ -36,12 +36,14 @@ export default function OrderDetailsModal({ order, onClose, visible }: any) {
   }, [visible, order]);
 
   useEffect(() => {
-    Animated.loop(
+    const loopAnim = Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, { toValue: 0.3, duration: 1000, useNativeDriver: true }),
         Animated.timing(pulseAnim, { toValue: 1, duration: 1000, useNativeDriver: true })
       ])
-    ).start();
+    );
+    loopAnim.start();
+    return () => loopAnim.stop();
   }, []);
 
   const closeAnim = () => {
@@ -106,11 +108,11 @@ export default function OrderDetailsModal({ order, onClose, visible }: any) {
               <View style={styles.badgeContainer}>
                 <View style={[styles.badge, { backgroundColor: `${T.accent}18`, borderColor: `${T.accent}30` }]}>
                   <Text style={[styles.badgeText, { color: T.accent, fontFamily: font }]}>
-                    {lang === 'bn' ? 'অর্ডার' : 'Order'} #{order.seq || 'N/A'}
+                    {lang === 'bn' ? 'অর্ডার' : 'Order'} #{order.id || 'N/A'}
                   </Text>
                 </View>
                 <Text style={[styles.orderId, { color: T.sub, opacity: 0.5, fontFamily: font }]}>
-                  {order.id.slice(-8)}
+                  {order.id}
                 </Text>
               </View>
               <Text style={[styles.title, { fontFamily: font, color: T.text, fontWeight: '800' }]}>

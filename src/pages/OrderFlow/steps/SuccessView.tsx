@@ -18,7 +18,7 @@ export default function SuccessView({ batchOrders, onFinish }: any) {
       useNativeDriver: true,
     }).start();
 
-    Animated.loop(
+    const loopAnim = Animated.loop(
       Animated.parallel([
         Animated.sequence([
           Animated.timing(pulse, { toValue: 1.6, duration: 2000, useNativeDriver: true }),
@@ -29,7 +29,10 @@ export default function SuccessView({ batchOrders, onFinish }: any) {
           Animated.timing(opacity, { toValue: 0.4, duration: 0, useNativeDriver: true }),
         ])
       ])
-    ).start();
+    );
+    loopAnim.start();
+
+    return () => loopAnim.stop();
   }, []);
 
   return (

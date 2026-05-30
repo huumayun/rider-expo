@@ -96,12 +96,14 @@ export default function DeliveryConfirmation({ order, onComplete, onCancel, hasN
   }, [visible, order]);
 
   useEffect(() => {
-    RNAnimated.loop(
+    const loopAnim = RNAnimated.loop(
       RNAnimated.sequence([
         RNAnimated.timing(pulseAnim, { toValue: 1.1, duration: 1000, useNativeDriver: true }),
         RNAnimated.timing(pulseAnim, { toValue: 1, duration: 1000, useNativeDriver: true })
       ])
-    ).start();
+    );
+    loopAnim.start();
+    return () => loopAnim.stop();
   }, []);
 
   useEffect(() => {
@@ -228,7 +230,7 @@ export default function DeliveryConfirmation({ order, onComplete, onCancel, hasN
   if (!visible && !showSuccess) return null;
 
   const isPaid = order?.paymentStatus === 'paid';
-  const displayId = order?.seq ? `#${order.seq}` : `#${order?.id?.slice(-6).toUpperCase()}`;
+  const displayId = `#${order?.id}`;
 
   return (
     <View style={{ flex: 1, backgroundColor: surf }}>
@@ -338,7 +340,7 @@ export default function DeliveryConfirmation({ order, onComplete, onCancel, hasN
                       </View>
 
                       <View style={{ position: 'relative', height: 84, justifyContent: 'center' }}>
-                        <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 14 }}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 12 }}>
                           {[0, 1, 2, 3].map((idx) => {
                             const char = otpInput[idx] || '';
                             const isFocused = otpInput.length === idx;
@@ -346,23 +348,23 @@ export default function DeliveryConfirmation({ order, onComplete, onCancel, hasN
                               <View 
                                 key={idx} 
                                 style={{ 
-                                  width: 62, 
-                                  height: 74, 
-                                  borderRadius: 18, 
-                                  backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)', 
-                                  borderWidth: 2, 
-                                  borderColor: error ? '#ff4d6d' : isFocused ? T.accent : char ? T.green : T.border + '40',
+                                  width: 60, 
+                                  height: 70, 
+                                  borderRadius: 16, 
+                                  backgroundColor: isDark ? T.surface : '#ffffff', 
+                                  borderWidth: 1.5, 
+                                  borderColor: error ? '#ff4d6d' : isFocused ? '#0ea5e9' : char ? '#0ea5e9' : T.border,
                                   alignItems: 'center', 
                                   justifyContent: 'center',
-                                  shadowColor: isFocused ? T.accent : 'transparent',
-                                  shadowOpacity: 0.2,
-                                  shadowRadius: 10,
-                                  elevation: isFocused ? 4 : 0
+                                  shadowColor: isFocused ? '#0ea5e9' : 'transparent',
+                                  shadowOpacity: 0.1,
+                                  shadowRadius: 6,
+                                  elevation: isFocused ? 2 : 0
                                 }}
                               >
                                 <Text style={{ fontSize: 32, fontWeight: '900', color: error ? '#ff4d6d' : char ? T.text : T.border + '60', fontFamily: font }}>{char}</Text>
                                 {isFocused && (
-                                  <Animated.View entering={FadeIn.duration(400)} style={{ position: 'absolute', bottom: 12, width: 20, height: 3, borderRadius: 2, backgroundColor: T.accent }} />
+                                  <Animated.View entering={FadeIn.duration(400)} style={{ position: 'absolute', bottom: 12, width: 20, height: 3, borderRadius: 2, backgroundColor: '#0ea5e9' }} />
                                 )}
                               </View>
                             );
@@ -375,6 +377,7 @@ export default function DeliveryConfirmation({ order, onComplete, onCancel, hasN
                           onChangeText={(v) => { setOtpInput(v.replace(/[^0-9]/g, '')); setError(''); }}
                           style={{ position: 'absolute', width: '100%', height: '100%', opacity: 0 }}
                           autoFocus={true}
+                          caretHidden={true}
                         />
                       </View>
 
@@ -444,7 +447,7 @@ export default function DeliveryConfirmation({ order, onComplete, onCancel, hasN
               {nextOrder && (
                 <View style={{ width: '100%', backgroundColor: isDark ? 'rgba(34,212,122,0.1)' : 'rgba(34,212,122,0.05)', borderRadius: 24, padding: 20, borderWidth: 1, borderColor: 'rgba(34,212,122,0.4)', gap: 10 }}>
                   <Text style={{ fontSize: 13, fontWeight: '900', color: T.text, textTransform: 'uppercase', letterSpacing: 1.5 }}>{lang === 'bn' ? 'পরবর্তী গন্তব্য' : 'Next Destination'}</Text>
-                  <Text style={{ fontSize: 16, fontWeight: '900', color: T.text }}>#{nextOrder.seq || nextOrder.id?.slice(-6).toUpperCase()}</Text>
+                  <Text style={{ fontSize: 16, fontWeight: '900', color: T.text }}>#{nextOrder.id}</Text>
                   <Text style={{ fontSize: 14, fontWeight: '700', color: T.text }}>{nextOrder.customer?.address || 'N/A'}</Text>
                 </View>
               )}

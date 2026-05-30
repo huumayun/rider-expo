@@ -10,7 +10,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import {
   Wallet, Send, Clock, CheckCircle2,
   TrendingUp, Banknote, ArrowDownLeft, ArrowUpRight,
-  ChevronRight, ShoppingBag, AlertTriangle, History
+  ChevronRight, ShoppingBag, AlertTriangle, History,
+  MapPin, Gauge
 } from 'lucide-react-native';
 import { useAuthStore } from '../../store/authStore';
 import { useApp } from '../../context/AppContext';
@@ -18,6 +19,7 @@ import { useRiderData } from '../../context/RiderDataContext';
 import { formatAppDate, toDate } from '../../utils/dateUtils';
 import { collection, query, where, orderBy, onSnapshot, limit, getDocs, startAfter } from 'firebase/firestore';
 import { db } from '../../config/firebase';
+import { useLocationStore } from '../../store/locationStore';
 
 const txCache: Record<string, any[]> = {
   all: [],
@@ -163,6 +165,29 @@ export default function WalletPage() {
   const { width, height } = Dimensions.get('window');
   const isDark = theme === 'dark';
   const surf = isDark ? T.surface : '#ffffff';
+
+  const { totalDistance, activeTime } = useLocationStore();
+
+  const formatActiveTime = (seconds: number) => {
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    if (lang === 'bn') {
+      if (hrs > 0) return `${hrs} ঘণ্টা ${mins} মি.`;
+      return `${mins} মি.`;
+    }
+    if (hrs > 0) return `${hrs}h ${mins}m`;
+    return `${mins}m`;
+  };
+
+  const formatDistance = (km: number) => {
+    return km.toFixed(1) + (lang === 'bn' ? ' কি.মি.' : ' km');
+  };
+
+  const avgSpeed = useMemo(() => {
+    if (activeTime === 0) return 0;
+    const hours = activeTime / 3600;
+    return Math.round(totalDistance / hours);
+  }, [totalDistance, activeTime]);
 
   const [activeFilter, setActiveFilter] = useState('all');
   const [transactions, setTransactions] = useState<Record<string, any[]>>(txCache);
@@ -391,6 +416,38 @@ export default function WalletPage() {
                 <Text style={{ fontSize: 15, fontWeight: '800', color: s.color }} numberOfLines={1}>{s.value}</Text>
               </View>
             ))}
+          </View>
+
+          {/* ACTIVE RIDE ANALYTICS */}
+          <View style={{ marginBottom: 20 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12, opacity: 0.8 }}>
+              <Gauge size={14} color={T.accent} strokeWidth={2.5} />
+              <Text style={{ fontFamily: font, fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1.5, color: T.accent }}>
+                {lang === 'bn' ? 'আজকের রাইড অ্যানালিটিক্স' : "Today's Ride Analytics"}
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}>
+              {[
+                { label: lang === 'bn' ? 'মোট দূরত্ব' : 'Distance Ridden', value: formatDistance(totalDistance), Icon: MapPin, color: '#e85d04', bg: ['#e85d0412', '#c44d0008'] },
+                { label: lang === 'bn' ? 'সক্রিয় সময়' : 'Active Time', value: formatActiveTime(activeTime), Icon: Clock, color: '#3b82f6', bg: ['#3b82f612', '#2563eb08'] },
+                { label: lang === 'bn' ? 'গড় গতি' : 'Avg Speed', value: avgSpeed + (lang === 'bn' ? ' কিমি/ঘণ্টা' : ' km/h'), Icon: Gauge, color: '#22d47a', bg: ['#22d47a12', '#16a34a08'] },
+              ].map((card, i) => (
+                <View key={i} style={{ flex: 1, backgroundColor: surf, borderWidth: 1, borderColor: T.border, borderRadius: 16, padding: 12, overflow: 'hidden' }}>
+                  <LinearGradient colors={card.bg as [string, string]} style={StyleSheet.absoluteFillObject} />
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6, zIndex: 1 }}>
+                    <View style={{ width: 22, height: 22, borderRadius: 7, backgroundColor: `${card.color}20`, alignItems: 'center', justifyContent: 'center' }}>
+                      <card.Icon size={12} color={card.color} strokeWidth={2.5} />
+                    </View>
+                    <Text style={{ fontSize: 7, fontWeight: '800', textTransform: 'uppercase', color: T.sub }} numberOfLines={1}>
+                      {card.label}
+                    </Text>
+                  </View>
+                  <Text style={{ fontSize: 13, fontWeight: '900', color: T.text, zIndex: 1 }} numberOfLines={1}>
+                    {card.value}
+                  </Text>
+                </View>
+              ))}
+            </View>
           </View>
         </View>
 

@@ -1,42 +1,42 @@
-import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { View, Text, Pressable, ScrollView, Image, ActivityIndicator } from 'react-native';
 import { CheckCircle2, PackageSearch, ShoppingBag, ClipboardList, Check, Banknote, Camera, RotateCcw } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useApp } from '../../../context/AppContext';
 
-const ParcelPhoto = React.memo(({ ord, pickupPhotos, isCompressing, handleCapture, removePhoto, T, lang, txt, sub }: any) => {
+const BatchPhoto = React.memo(({ batchPhoto, isCompressing, handleCapture, removePhoto, T, lang, txt, sub }: any) => {
   return (
-    <View style={{ marginBottom: 4 }}>
+    <View style={{ marginBottom: 12 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8, opacity: 0.8 }}>
         <Camera size={10} color={sub} />
         <Text style={{ fontSize: 8, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1, color: sub }}>
-          {lang === 'bn' ? 'পার্সেলের ছবি' : 'Parcel Photo'}
+          {lang === 'bn' ? 'পার্সেলের ছবি (সব অর্ডার)' : 'Parcel Photo (All Orders)'}
         </Text>
       </View>
 
       <Pressable
-        onPress={() => !pickupPhotos[ord.id] && handleCapture(ord.id)}
+        onPress={() => !batchPhoto && handleCapture()}
         style={{
-          width: '100%', height: pickupPhotos[ord.id] ? 160 : 70,
-          borderRadius: 18, backgroundColor: pickupPhotos[ord.id] ? T.hi : `${T.accent}05`,
-          borderWidth: 1.5, borderStyle: 'dashed', borderColor: pickupPhotos[ord.id] ? T.green : isCompressing === ord.id ? T.accent : T.border,
+          width: '100%', height: batchPhoto ? 180 : 80,
+          borderRadius: 20, backgroundColor: batchPhoto ? T.hi : `${T.accent}08`,
+          borderWidth: 1.5, borderColor: batchPhoto ? T.green : isCompressing ? T.accent : `${T.accent}30`,
           alignItems: 'center', justifyContent: 'center', overflow: 'hidden'
         }}
       >
-        {isCompressing === ord.id ? (
+        {isCompressing ? (
           <View style={{ alignItems: 'center', gap: 8 }}>
             <ActivityIndicator size="small" color={T.accent} />
             <Text style={{ fontSize: 9, fontWeight: '800', color: sub }}>{lang === 'bn' ? 'প্রসেসিং...' : 'Processing...'}</Text>
           </View>
-        ) : pickupPhotos[ord.id] ? (
+        ) : batchPhoto ? (
           <>
-            <Image source={{ uri: pickupPhotos[ord.id].previewUrl }} style={{ width: '100%', height: '100%' }} />
+            <Image source={{ uri: batchPhoto.previewUrl }} style={{ width: '100%', height: '100%' }} />
             <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 40, backgroundColor: 'rgba(0,0,0,0.5)', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, gap: 6 }}>
               <CheckCircle2 size={14} color={T.green} strokeWidth={3} />
-              <Text style={{ fontSize: 10, fontWeight: '900', color: '#fff' }}>{lang === 'bn' ? 'ছবি তোলা হয়েছে' : 'PHOTO TAKEN'}</Text>
+              <Text style={{ fontSize: 10, fontWeight: '900', color: '#fff' }}>{lang === 'bn' ? 'ছবি তোলা হয়েছে' : 'PHOTO TAKEN'}</Text>
             </View>
             <Pressable
-              onPress={() => removePhoto(ord.id)}
+              onPress={removePhoto}
               style={{ position: 'absolute', top: 10, right: 10, width: 32, height: 32, borderRadius: 10, backgroundColor: 'rgba(255,50,50,0.9)', alignItems: 'center', justifyContent: 'center' }}
             >
               <RotateCcw size={14} color="#fff" strokeWidth={3} />
@@ -49,7 +49,7 @@ const ParcelPhoto = React.memo(({ ord, pickupPhotos, isCompressing, handleCaptur
             </View>
             <View>
               <Text style={{ fontSize: 11, fontWeight: '900', color: txt }}>{lang === 'bn' ? 'ছবি তুলুন' : 'TAP TO TAKE PHOTO'}</Text>
-              <Text style={{ fontSize: 8, fontWeight: '700', color: sub, opacity: 0.7 }}>{lang === 'bn' ? 'প্যাকেজ হস্তান্তরের আগে' : 'Required before picking up'}</Text>
+              <Text style={{ fontSize: 8, fontWeight: '700', color: sub, opacity: 0.7 }}>{lang === 'bn' ? 'সব পার্সেলের একসাথে' : 'One photo for all parcels'}</Text>
             </View>
           </View>
         )}
@@ -111,10 +111,10 @@ const OrderItem = React.memo(({ item, orderId, idx, isChecked, toggleCheck, T, l
       </View>
 
       <View style={{
-        width: 36, height: 36, borderRadius: 12,
+        width: 38, height: 38, borderRadius: 12,
         alignItems: 'center', justifyContent: 'center',
         backgroundColor: isChecked ? T.accent : T.hi,
-        borderWidth: 1, borderColor: isChecked ? T.accent : brd,
+        borderWidth: 1.5, borderColor: isChecked ? T.accent : brd,
       }}>
         {isChecked ? (
           <Check size={18} color="#fff" strokeWidth={3} />
@@ -139,7 +139,7 @@ export default function ArrivedAtBranchView({ order, batchOrders, onPhotosChange
     ordersList.forEach((ord: any) => {
       if (ord.items) {
         ord.items.forEach((item: any, idx: number) => {
-          items.push({ ...item, orderId: ord.id, seq: ord.seq || ord.id.slice(-5).toUpperCase(), localIdx: idx });
+          items.push({ ...item, orderId: ord.id, seq: ord.id, localIdx: idx });
         });
       }
     });
@@ -147,8 +147,8 @@ export default function ArrivedAtBranchView({ order, batchOrders, onPhotosChange
   }, [ordersList]);
 
   const [checkedItems, setCheckedItems] = useState<any>({});
-  const [pickupPhotos, setPickupPhotos] = useState<any>({});
-  const [isCompressing, setIsCompressing] = useState<string | null>(null);
+  const [batchPhoto, setBatchPhoto] = useState<any>(null);
+  const [isCompressing, setIsCompressing] = useState(false);
 
   const toggleCheck = useCallback((orderId: string, localIdx: number) => {
     const key = `${orderId}-${localIdx}`;
@@ -162,45 +162,41 @@ export default function ArrivedAtBranchView({ order, batchOrders, onPhotosChange
     });
   }, [allItems, onVerificationStatusChange]);
 
-  const handleCapture = useCallback(async (orderId: string) => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      alert('Camera permission is required');
-      return;
+  const handleCapture = useCallback(async () => {
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') { alert('Camera permission is required'); return; }
+      setIsCompressing(true);
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: false,
+        quality: 0.5,
+      });
+      if (!result.canceled && result.assets?.[0]) {
+        const photo = { file: result.assets[0], previewUrl: result.assets[0].uri };
+        setBatchPhoto(photo);
+        if (onPhotosChange) {
+          const mapped: any = {};
+          ordersList.forEach((o: any) => { mapped[o.id] = photo; });
+          onPhotosChange(mapped);
+        }
+      }
+    } catch (err) {
+      console.error('Camera error:', err);
+    } finally {
+      setIsCompressing(false);
     }
+  }, [ordersList, onPhotosChange]);
 
-    setIsCompressing(orderId);
-    let result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: false,
-      quality: 0.5,
-    });
-
-    if (!result.canceled) {
-      const newPhotos = { ...pickupPhotos, [orderId]: { file: result.assets[0], previewUrl: result.assets[0].uri } };
-      setPickupPhotos(newPhotos);
-      if (onPhotosChange) onPhotosChange(newPhotos);
-    }
-    setIsCompressing(null);
-  }, [pickupPhotos, onPhotosChange]);
-
-  const removePhoto = useCallback((orderId: string) => {
-    setPickupPhotos((prev: any) => {
-      const newPhotos = { ...prev };
-      delete newPhotos[orderId];
-      if (onPhotosChange) onPhotosChange(newPhotos);
-      return newPhotos;
-    });
+  const removePhoto = useCallback(() => {
+    setBatchPhoto(null);
+    if (onPhotosChange) onPhotosChange({});
   }, [onPhotosChange]);
 
-  const allChecked = useMemo(() => 
+  const allChecked = useMemo(() =>
     allItems.length > 0 && allItems.every(item => checkedItems[`${item.orderId}-${item.localIdx}`]),
     [allItems, checkedItems]
   );
-
-  useEffect(() => {
-    if (onVerificationStatusChange) onVerificationStatusChange(allChecked);
-  }, []);
 
   const totalBatchAmount = useMemo(() => 
     ordersList.reduce((sum: number, o: any) => sum + Number(o.totalAmount || 0), 0),
@@ -222,11 +218,11 @@ export default function ArrivedAtBranchView({ order, batchOrders, onPhotosChange
         <View style={{
           backgroundColor: cardBg,
           borderWidth: 1, borderColor: brd,
-          borderRadius: 22,
-          padding: 18,
+          borderRadius: 24,
+          padding: 20,
           overflow: 'hidden',
-          flexDirection: 'row', alignItems: 'center', gap: 14,
-          shadowColor: '#000', shadowOpacity: isDark ? 0.5 : 0.1, shadowRadius: 28, elevation: 8
+          flexDirection: 'row', alignItems: 'center', gap: 16,
+          shadowColor: '#000', shadowOpacity: isDark ? 0.3 : 0.08, shadowRadius: 32, elevation: 12
         }}>
           <View style={{ position: 'absolute', top: -18, right: -18, opacity: 0.04, transform: [{ rotate: '12deg' }] }}>
             <ClipboardList size={100} color={T.accent} />
@@ -262,6 +258,19 @@ export default function ArrivedAtBranchView({ order, batchOrders, onPhotosChange
       </View>
 
       <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 140, paddingTop: 8, gap: 16 }}>
+
+        {/* Single batch photo */}
+        <BatchPhoto
+          batchPhoto={batchPhoto}
+          isCompressing={isCompressing}
+          handleCapture={handleCapture}
+          removePhoto={removePhoto}
+          T={T}
+          lang={lang}
+          txt={txt}
+          sub={sub}
+        />
+
         {ordersList.map((ord: any) => {
           if (!ord.items || ord.items.length === 0) return null;
           return (
@@ -270,22 +279,10 @@ export default function ArrivedAtBranchView({ order, batchOrders, onPhotosChange
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginLeft: 2 }}>
                   <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: T.accent }} />
                   <Text style={{ fontSize: 11, fontWeight: '900', color: txt, textTransform: 'uppercase', letterSpacing: 1 }}>
-                    {lang === 'bn' ? 'অর্ডার #' : 'ORDER #'} {ord.seq || ord.id.slice(-5).toUpperCase()}
+                    {lang === 'bn' ? 'অর্ডার #' : 'ORDER #'} {ord.id}
                   </Text>
                 </View>
               )}
-
-              <ParcelPhoto 
-                ord={ord} 
-                pickupPhotos={pickupPhotos} 
-                isCompressing={isCompressing} 
-                handleCapture={handleCapture} 
-                removePhoto={removePhoto} 
-                T={T} 
-                lang={lang} 
-                txt={txt} 
-                sub={sub} 
-              />
 
               {ord.items.map((item: any, idx: number) => (
                 <OrderItem 

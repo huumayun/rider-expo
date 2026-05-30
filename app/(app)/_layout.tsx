@@ -10,6 +10,11 @@ import { useRiderData, RiderDataProvider } from '../../src/context/RiderDataCont
 import { useAuthStore } from '../../src/store/authStore';
 import { useUIStore } from '../../src/store/uiStore';
 import { NoInternet } from '../../src/components/NoInternet';
+import { useOrderStore } from '../../src/store/orderStore';
+import OrderPopup from '../../src/components/modals/OrderPopup';
+import { db } from '../../src/config/firebase';
+import { doc, updateDoc, serverTimestamp, arrayUnion } from 'firebase/firestore';
+import { checkAndCreateBatch } from '../../src/utils/batchUtils';
 
 import {
   Home, Package, Wallet, Bell, User
@@ -105,10 +110,8 @@ function CustomTabBar({ state, navigation }: any) {
   const hideBottomNav = useUIStore(s => s.hideBottomNav);
   const isExecuting = useUIStore(s => s.isExecuting);
 
-  // Strictly only show on these 5 main paths, and not when executing an order
-  // If in map mode, only show if hideBottomNav is manually set to false
   const mainPaths = ['/', '/orders', '/wallet', '/notifications', '/profile'];
-  const isMainTab = mainPaths.includes(pathname) && !isExecuting && (viewMode !== 'map' || !hideBottomNav);
+  const isMainTab = mainPaths.includes(pathname) && !isExecuting;
 
   const slideAnim = React.useRef(new Animated.Value(isMainTab ? 0 : 150)).current;
 
@@ -189,7 +192,31 @@ function CustomTabBar({ state, navigation }: any) {
 
 // ─── Inner layout (needs RiderData context) ───────────────────────────────────
 function AppTabsLayout() {
-  const { T } = useApp();
+  const { T, t, lang } = useApp();
+  const { activeOrders } = useRiderData();
+  const { rider } = useAuthStore();
+  const { newOrderPopup, dismissPopup } = useOrderStore();
+
+  const isOnline = rider?.dutyStatus === 'online';
+  const assignedOrders = React.useMemo(() => activeOrders.filter(o => !['pending', 'delivered', 'success', 'cancelled'].includes(o.status)), [activeOrders]);
+
+  const handleAcceptOrder = async (orderId: string) => {
+    if (!rider?.uid) return;
+    const newOrder = activeOrders.find(o => o.id === orderId) || newOrderPopup;
+    if (!newOrder) return;
+    const batchIdToJoin = checkAndCreateBatch(newOrder, assignedOrders);
+    await updateDoc(doc(db, 'orders', orderId), {
+      status: 'accepted',
+      batchId: batchIdToJoin,
+      acceptedAt: serverTimestamp(),
+      updatedBy: rider.uid
+    });
+    dismissPopup();
+  };
+
+  const handleRejectOrder = async (orderId: string) => {
+    dismissPopup();
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: T.bg }}>
@@ -213,6 +240,16 @@ function AppTabsLayout() {
         <Tabs.Screen name="chat/[orderId]" options={{ href: null }} />
         <Tabs.Screen name="attendance" options={{ href: null }} />
       </Tabs>
+
+      {/* Global new order popup overlay */}
+      {isOnline && newOrderPopup && (
+        <OrderPopup
+          visible={!!newOrderPopup}
+          order={newOrderPopup}
+          onAccept={() => handleAcceptOrder(newOrderPopup.id)}
+          onSkip={() => handleRejectOrder(newOrderPopup.id)}
+        />
+      )}
 
       {/* Global no-internet overlay */}
       <NoInternet />

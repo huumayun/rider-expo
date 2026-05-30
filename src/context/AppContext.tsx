@@ -98,6 +98,21 @@ const DICT: Record<string, Record<Lang, string>> = {
   wallet_credit_tag:    { bn: 'ক্রেডিট', en: 'CREDIT' },
   wallet_transfer_tag:  { bn: 'ডেবিট', en: 'DEBIT' },
   wallet_done:          { bn: 'সম্পন্ন', en: 'Done' },
+  att_log:              { bn: 'অ্যাটেনডেন্স', en: 'Attendance Log' },
+  att_active:           { bn: 'অ্যাকটিভ', en: 'Active' },
+  att_offline:          { bn: 'অফলাইন', en: 'Offline' },
+  att_checkin:          { bn: 'চেক-ইন', en: 'Check In' },
+  att_checkout:         { bn: 'চেক-আউট', en: 'Check Out' },
+  att_deliveries:       { bn: 'ডেলিভারি', en: 'Deliveries' },
+  att_weekly_act:       { bn: 'সাপ্তাহিক কার্যক্রম', en: 'Weekly Activity' },
+  att_detailed_logs:    { bn: 'বিস্তারিত লগ নিচে দেওয়া হলো', en: 'Detailed logs listed below' },
+  att_rider_hist:       { bn: 'রাইডার হিস্ট্রি', en: 'Rider History' },
+  att_del:              { bn: 'ডেলিভারি', en: 'DEL' },
+  att_hours_worked:     { bn: 'ঘণ্টা কাজ হয়েছে', en: 'Hours Worked' },
+  att_orders:           { bn: 'অর্ডার', en: 'Orders' },
+  att_week:             { bn: 'সপ্তাহ', en: 'week' },
+  att_history:          { bn: 'হিস্ট্রি', en: 'history' },
+
   wallet_title:         { bn: 'আমার ওয়ালেট', en: 'My Wallet' },
   wallet_sub:           { bn: 'আয় ও লেনদেনের হিসাব', en: 'Earnings & Activity' },
   wallet_total_cash:    { bn: 'মোট নগদ', en: 'Total Cash' },
@@ -235,6 +250,9 @@ const DICT: Record<string, Record<Lang, string>> = {
   odm_tl_delivered:     { bn: 'ডেলিভারি সম্পন্ন', en: 'Delivered' },
   popup_new:            { bn: 'নতুন অর্ডার এসাইন হয়েছে', en: 'New Order Assigned' },
   popup_pickup:         { bn: 'পিকআপ লোকেশন', en: 'Pickup Location' },
+  popup_delivery:       { bn: 'ডেলিভারি লোকেশন', en: 'Delivery Location' },
+  popup_customer:       { bn: 'কাস্টমার', en: 'Customer' },
+  popup_address:        { bn: 'ডেলিভারি ঠিকানা', en: 'Delivery Address' },
   popup_skip:           { bn: 'পরে করুন', en: 'Skip' },
   popup_accept:         { bn: 'অর্ডারটি নিন', en: 'Accept' },
   order_popup_title:    { bn: 'নতুন অর্ডার!', en: 'New Order!' },
@@ -350,7 +368,11 @@ export function AppProvider({ children, globalToast }: { children: ReactNode; gl
   const value = useMemo(() => ({
     theme, lang, T, font, toastEnabled,
     toggleTheme, toggleLang, toggleToast, t, getStatus,
-    showToast: globalToast
+    showToast: (title: string, body: string, type?: string | null) => {
+      if (toastEnabled && globalToast) {
+        globalToast(title, body, type);
+      }
+    }
   }), [theme, lang, T, font, toastEnabled, toggleTheme, toggleLang, toggleToast, t, getStatus, globalToast]);
 
   if (!ready) return null;

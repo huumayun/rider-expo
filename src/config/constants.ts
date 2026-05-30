@@ -153,4 +153,10 @@ export const RTDB_PATHS = {
   chatMeta: (orderId: string) => `chats/${orderId}/meta`,
   typing: (orderId: string, role: string) => `chats/${orderId}/meta/${role}Typing`,
   riderTyping: (orderId: string, uid: string) => `chats/${orderId}/meta/riderTyping`,
+  riderTracking: (uid: string) => `riders/${uid}/tracking`,
 } as const;
+
+// ─── Location tracking config ────────────────────────────────────────────────
+// 25m: large enough to skip GPS noise/jitter but small enough to keep the
+// map marker moving smoothly for typical urban delivery speeds.
+export const TRACKING_DISTANCE_INTERVAL_M = 25;

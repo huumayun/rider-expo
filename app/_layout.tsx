@@ -131,7 +131,8 @@ function useAuthListener() {
               }
             }
             
-            setRider({ uid: user.uid, ...newData } as any);
+            const resolvedPhoto = user.photoURL || newData.photoURL || newData.profilePic || newData.avatar || newData.photo;
+            setRider({ uid: user.uid, photoURL: resolvedPhoto, ...newData } as any);
           } else {
             setRider(null);
           }
@@ -149,14 +150,33 @@ function useAuthListener() {
 // ─── Inner app (needs router context) ────────────────────────────────────────
 function InnerLayout({ onToast }: { onToast: (t: string, b: string, type?: string | null) => void }) {
   const { rider } = useAuthStore();
-  const { T, theme } = useApp();
+  const { T, theme, toastEnabled } = useApp();
+  const router = useRouter();
 
   useProtectedRoute();
   useBackHandler();
   useAuthListener();
   useNotifications({
     uid: rider?.uid,
-    onForeground: (title, body, type) => onToast(title, body, type),
+    onForeground: (title, body, type) => {
+      if (toastEnabled) {
+        onToast(title, body, type);
+      }
+    },
+    onNotificationTap: (type, data) => {
+      const t = type || data?.type;
+      const targetId = data?.targetId || data?.chatId || data?.orderId;
+      
+      if (t === 'chat' || t === 'message') {
+        if (targetId) router.push(`/chat/${targetId}`);
+      } else if (t === 'new_order' || t === 'order_status' || t === 'order') {
+        router.push(`/orders`);
+      } else if (t === 'wallet') {
+        router.push(`/wallet`);
+      } else {
+        router.push(`/(app)`);
+      }
+    }
   });
 
   const navTheme = theme === 'dark' ? DarkTheme : DefaultTheme;
@@ -229,7 +249,7 @@ export default function RootLayout() {
     <ErrorBoundary>
       <GestureHandlerRootView style={styles.root}>
         <SafeAreaProvider>
-          <AppProvider>
+          <AppProvider globalToast={addToast}>
             <LocationProvider>
               {/* Custom animated splash overlay */}
               {showCustomSplash && (
