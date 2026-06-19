@@ -6,7 +6,7 @@ import { LargeTurnIndicator } from '../../../components/map/LargeTurnIndicator';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../../../context/AppContext';
 import { translateInstruction } from '../../../components/map/mapUtils';
-
+import { useUIStore } from '../../../store/uiStore';
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const SNAP_EXPANDED = SCREEN_HEIGHT * 0.42;
 const SNAP_COLLAPSED = SCREEN_HEIGHT + 100; // Push completely off-screen so bottom buttons stay transparent over map
@@ -214,6 +214,8 @@ export default React.memo(function GoToCustomerView({
     return isBn ? `${dirs[idx]} যান` : `Head ${dirs[idx]}`;
   };
 
+  const setIsOrderSheetOpen = useUIStore(s => s.setIsOrderSheetOpen);
+
   const getBannerInstructions = () => {
     const headingDirection = getCompassDirection(heading || 0, lang);
     const nextInstruction = translateInstruction(routeInfo.nextStep?.instruction || '', lang);
@@ -272,6 +274,7 @@ export default React.memo(function GoToCustomerView({
         stiffness: 380,
         damping: 36
       }).start();
+      setIsOrderSheetOpen(false);
     } else if (!isNavigating && !isNavMode) {
       hasAutoNavigated.current = false;
     }
@@ -292,7 +295,9 @@ export default React.memo(function GoToCustomerView({
         // Use gesture velocity combined with distance to determine snap target
         const isScrollingUp = gestureState.vy < -0.5 || gestureState.dy < -40;
         const target = isScrollingUp ? SNAP_EXPANDED : SNAP_COLLAPSED;
-        setCollapsed(target === SNAP_COLLAPSED);
+        const nextCollapsed = target === SNAP_COLLAPSED;
+        setCollapsed(nextCollapsed);
+        setIsOrderSheetOpen(!nextCollapsed);
         Animated.spring(sheetY, {
           toValue: target,
           useNativeDriver: false,
@@ -305,7 +310,9 @@ export default React.memo(function GoToCustomerView({
 
   const toggleSheet = () => {
     const target = collapsed ? SNAP_EXPANDED : SNAP_COLLAPSED;
-    setCollapsed(!collapsed);
+    const nextCollapsed = !collapsed;
+    setCollapsed(nextCollapsed);
+    setIsOrderSheetOpen(!nextCollapsed);
     Animated.spring(sheetY, {
       toValue: target,
       useNativeDriver: false,

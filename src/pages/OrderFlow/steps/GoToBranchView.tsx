@@ -1,12 +1,13 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { View, Text, Pressable, ScrollView, Animated, Dimensions, PanResponder, Linking } from 'react-native';
-import ReAnimated, { FadeInRight, FadeOutRight, useSharedValue, useAnimatedStyle, withDelay, withRepeat, withSequence, withTiming, FadeIn, FadeOut } from 'react-native-reanimated';
+import ReAnimated, { FadeInRight, FadeOutRight, useSharedValue, useAnimatedStyle, withDelay, withRepeat, withSequence, withTiming, FadeIn, FadeOut, FadeInUp } from 'react-native-reanimated';
 import { MapPin, Phone, Package, Banknote, CornerUpLeft, CornerUpRight, ArrowUp, Compass, Store, Navigation, Truck, ChevronLeft, ChevronRight, ChevronUp, ArrowUpLeft, ArrowUpRight } from 'lucide-react-native';
 import { LargeTurnIndicator } from '../../../components/map/LargeTurnIndicator';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../../../context/AppContext';
 import RouteOverviewMap from '../../../components/map/RouteOverviewMap';
 import { translateInstruction } from '../../../components/map/mapUtils';
+import { useUIStore } from '../../../store/uiStore';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const SNAP_EXPANDED = SCREEN_HEIGHT * 0.38;
@@ -139,7 +140,9 @@ export default React.memo(function GoToBranchView({
   const insets = useSafeAreaInsets();
   
   const isNavMode = orderStatus === 'go_to_branch' || isNavigating;
-  const SNAP_COLLAPSED = isNavMode ? (SCREEN_HEIGHT + 100) : (SCREEN_HEIGHT - 160);
+  const SNAP_COLLAPSED = SCREEN_HEIGHT + 100;
+  
+  const setIsOrderSheetOpen = useUIStore(s => s.setIsOrderSheetOpen);
 
   const getCompassDirection = (h: number, l: string) => {
     const isBn = l === 'bn';
@@ -204,6 +207,7 @@ export default React.memo(function GoToBranchView({
         stiffness: 380,
         damping: 36
       }).start();
+      setIsOrderSheetOpen(false);
     }
   }, [isNavMode]);
 
@@ -222,7 +226,9 @@ export default React.memo(function GoToBranchView({
         // Use gesture velocity combined with distance to determine snap target
         const isScrollingUp = gestureState.vy < -0.5 || gestureState.dy < -40;
         const target = isScrollingUp ? SNAP_EXPANDED : SNAP_COLLAPSED;
-        setCollapsed(target === SNAP_COLLAPSED);
+        const nextCollapsed = target === SNAP_COLLAPSED;
+        setCollapsed(nextCollapsed);
+        setIsOrderSheetOpen(!nextCollapsed);
         Animated.spring(sheetY, {
           toValue: target,
           useNativeDriver: false,
@@ -235,7 +241,9 @@ export default React.memo(function GoToBranchView({
 
   const toggleSheet = () => {
     const target = collapsed ? SNAP_EXPANDED : SNAP_COLLAPSED;
-    setCollapsed(!collapsed);
+    const nextCollapsed = !collapsed;
+    setCollapsed(nextCollapsed);
+    setIsOrderSheetOpen(!nextCollapsed);
     Animated.spring(sheetY, {
       toValue: target,
       useNativeDriver: false,
@@ -387,60 +395,6 @@ export default React.memo(function GoToBranchView({
         </ReAnimated.View>
       )}
 
-      {/* ── STAT PILLS (assigned/accepted overview only) ── */}
-      {!isNavMode && (
-        <Animated.View style={{
-          position: 'absolute',
-          top: Animated.subtract(sheetY, 82),
-          left: 16, right: 16,
-          flexDirection: 'row',
-          justifyContent: 'space-between',
-          zIndex: 20,
-          pointerEvents: 'none',
-        }}>
-          <View style={{ 
-            backgroundColor: isDark ? 'rgba(30,30,45,0.95)' : 'rgba(255,255,255,0.95)', 
-            borderWidth: 1, 
-            borderColor: brd, 
-            borderRadius: 16, 
-            paddingVertical: 10, 
-            paddingHorizontal: 16, 
-            shadowColor: '#000', 
-            shadowOpacity: 0.1, 
-            shadowRadius: 10, 
-            elevation: 5 
-          }}>
-            <Text style={{ fontSize: 8, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1.5, color: T.accent, marginBottom: 2 }}>
-              {lang === 'bn' ? 'মোট দূরত্ব' : 'TOTAL DISTANCE'}
-            </Text>
-            <Text style={{ fontSize: 20, fontWeight: '900', color: txt }}>
-              {routeInfo?.distance || '--'}
-            </Text>
-          </View>
-          <View style={{ 
-            backgroundColor: isDark ? 'rgba(30,30,45,0.95)' : 'rgba(255,255,255,0.95)', 
-            borderWidth: 1, 
-            borderColor: brd, 
-            borderRadius: 16, 
-            paddingVertical: 10, 
-            paddingHorizontal: 16, 
-            alignItems: 'flex-end', 
-            shadowColor: '#000', 
-            shadowOpacity: 0.1, 
-            shadowRadius: 10, 
-            elevation: 5 
-          }}>
-            <Text style={{ fontSize: 8, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1.5, color: sub, marginBottom: 2 }}>
-              {lang === 'bn' ? 'আনুমানিক সময়' : 'EST. TIME'}
-            </Text>
-            <Text style={{ fontSize: 20, fontWeight: '900', color: txt }}>
-              {routeInfo?.duration || '--'}
-            </Text>
-          </View>
-        </Animated.View>
-      )}
-
-      {/* ── GOOGLE MAPS STYLE BOTTOM ETA CARD ── */}
       <Animated.View
         style={{
           position: 'absolute', top: sheetY, left: 0, right: 0, bottom: -40,

@@ -23,7 +23,7 @@ export default function ChatWindow({ order, onClose, visible }: any) {
   const scrollViewRef = useRef<ScrollView>(null);
 
   const { rider } = useAuthStore();
-  const { messages, sendMessage, customerTyping, updateRiderTyping } = useChat(order?.id, rider?.uid || null);
+  const { messages, sendMessage, customerTyping, updateRiderTyping } = useChat(order?.id, rider?.uid || null, visible);
   const { pickAndUpload, uploading } = useImageUpload();
 
   useEffect(() => {

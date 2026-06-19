@@ -156,6 +156,8 @@ const styles = StyleSheet.create({
   icon: {
     width: ICON_SIZE,
     height: ICON_SIZE,
+    borderRadius: ICON_SIZE / 2,
+    overflow: 'hidden',
   },
   taglineWrap: {
     marginTop: 20,

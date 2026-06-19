@@ -263,7 +263,7 @@ export default function DeliveryConfirmation({ order, onComplete, onCancel, hasN
                 </Pressable>
               </View>
 
-              <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+              <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 40 + insets.bottom }} showsVerticalScrollIndicator={false}>
                 <View style={{ backgroundColor: isDark ? '#1e293b' : '#f8fafc', paddingHorizontal: 20, paddingTop: 20, paddingBottom: 20, borderBottomWidth: 1, borderBottomColor: T.border, overflow: 'hidden' }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 16 }}>
                     <RNAnimated.View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: T.accent, transform: [{ scale: pulseAnim }] }} />

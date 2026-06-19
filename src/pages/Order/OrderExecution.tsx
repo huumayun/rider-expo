@@ -90,7 +90,8 @@ const ReturnInProgressView = React.memo(({ order }: { order: any }) => {
 
 const PickedSuccessView = React.memo(({ orders, riderLocation, onStartClosestDelivery, onContinue }: { orders: any[], riderLocation: any, onStartClosestDelivery?: (order: any) => void, onContinue: () => void }) => {
   const { T, t, lang, font } = useApp();
-  
+  const insets = useSafeAreaInsets();
+
   const aggregatedItems = useMemo(() => {
     const map: Record<string, any> = {};
     orders.forEach(o => {
@@ -109,16 +110,16 @@ const PickedSuccessView = React.memo(({ orders, riderLocation, onStartClosestDel
   const phone = soloOrder?.customer?.phone || soloOrder?.customerPhone || soloOrder?.phone;
   const customerName = soloOrder?.customerName || soloOrder?.customer?.name || 'Customer';
   const customerAddress = soloOrder?.customer?.address || '—';
-  
+
   const distance = useMemo(() => {
     if (!isSolo) return '';
     const custLoc = soloOrder?.customer?.location || soloOrder?.customer?.address;
     if (!riderLocation || !custLoc) return '--';
-    
+
     const lat = custLoc.lat ?? custLoc.latitude;
     const lng = custLoc.lng ?? custLoc.longitude;
     if (!lat || !lng) return '--';
-    
+
     const distMeters = calculateDistance(riderLocation.lat, riderLocation.lng, Number(lat), Number(lng));
     if (distMeters >= 1000) {
       const km = (distMeters / 1000).toFixed(1);
@@ -130,25 +131,25 @@ const PickedSuccessView = React.memo(({ orders, riderLocation, onStartClosestDel
 
   const closestOrder = useMemo(() => {
     if (!orders || orders.length <= 1 || !riderLocation) return null;
-    
+
     let minDistance = Infinity;
     let closest: any = null;
-    
+
     orders.forEach(o => {
       const custLoc = o.customer?.location || o.customer?.address;
       if (!custLoc) return;
-      
+
       const lat = custLoc.lat ?? custLoc.latitude;
       const lng = custLoc.lng ?? custLoc.longitude;
       if (!lat || !lng) return;
-      
+
       const dist = calculateDistance(riderLocation.lat, riderLocation.lng, Number(lat), Number(lng));
       if (dist < minDistance) {
         minDistance = dist;
         closest = { order: o, distance: dist };
       }
     });
-    
+
     return closest;
   }, [orders, riderLocation]);
 
@@ -195,26 +196,26 @@ const PickedSuccessView = React.memo(({ orders, riderLocation, onStartClosestDel
                   </Text>
                 </View>
                 {phone ? (
-                  <Pressable 
-                    onPress={() => Linking.openURL(`tel:${phone}`)} 
-                    style={{ 
-                      width: 48, 
-                      height: 48, 
-                      borderRadius: 16, 
-                      backgroundColor: T.green || '#22c55e', 
-                      alignItems: 'center', 
-                      justifyContent: 'center', 
-                      shadowColor: T.green || '#22c55e', 
-                      shadowOpacity: 0.25, 
-                      shadowRadius: 10, 
-                      elevation: 4 
+                  <Pressable
+                    onPress={() => Linking.openURL(`tel:${phone}`)}
+                    style={{
+                      width: 48,
+                      height: 48,
+                      borderRadius: 16,
+                      backgroundColor: T.green || '#22c55e',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      shadowColor: T.green || '#22c55e',
+                      shadowOpacity: 0.25,
+                      shadowRadius: 10,
+                      elevation: 4
                     }}
                   >
                     <Phone size={20} color="#fff" />
                   </Pressable>
                 ) : null}
               </View>
-              
+
               <View style={{ borderTopWidth: 1, borderTopColor: T.border, paddingTop: 16 }}>
                 <Text style={{ fontSize: 9, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 2, color: T.sub, marginBottom: 4 }}>
                   {lang === 'bn' ? 'ডেলিভারি ঠিকানা' : 'DELIVERY ADDRESS'}
@@ -223,7 +224,7 @@ const PickedSuccessView = React.memo(({ orders, riderLocation, onStartClosestDel
                   {customerAddress}
                 </Text>
               </View>
-              
+
               <View style={{ borderTopWidth: 1, borderTopColor: T.border, paddingTop: 16, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <Navigation size={14} color={T.accent} strokeWidth={2.5} />
                 <Text style={{ fontSize: 13, fontWeight: '800', color: T.accent }}>
@@ -252,11 +253,11 @@ const PickedSuccessView = React.memo(({ orders, riderLocation, onStartClosestDel
                     {lang === 'bn' ? '💡 সাজেস্টেড পরবর্তী ডেলিভারি' : '💡 Suggested Next Delivery'}
                   </Text>
                 </View>
-                
+
                 <View>
                   <Text style={{ fontSize: 13, fontWeight: '600', color: T.text, lineHeight: 18 }}>
-                    {lang === 'bn' 
-                      ? `কাস্টমার "${closestOrder.order.customerName || closestOrder.order.customer?.name || 'Customer'}" আপনার সবচেয়ে কাছে (${closestDistanceStr}) আছেন।` 
+                    {lang === 'bn'
+                      ? `কাস্টমার "${closestOrder.order.customerName || closestOrder.order.customer?.name || 'Customer'}" আপনার সবচেয়ে কাছে (${closestDistanceStr}) আছেন।`
                       : `Customer "${closestOrder.order.customerName || closestOrder.order.customer?.name || 'Customer'}" is nearest to you (${closestDistanceStr}).`}
                   </Text>
                   <Text style={{ fontSize: 11, fontWeight: '800', color: T.sub, marginTop: 4 }}>
@@ -264,21 +265,21 @@ const PickedSuccessView = React.memo(({ orders, riderLocation, onStartClosestDel
                   </Text>
                 </View>
 
-                <Pressable 
+                <Pressable
                   onPress={() => onStartClosestDelivery?.(closestOrder.order)}
-                  style={{ 
-                    width: '100%', 
-                    height: 48, 
-                    borderRadius: 14, 
-                    backgroundColor: T.accent, 
-                    alignItems: 'center', 
-                    justifyContent: 'center', 
+                  style={{
+                    width: '100%',
+                    height: 48,
+                    borderRadius: 14,
+                    backgroundColor: T.accent,
+                    alignItems: 'center',
+                    justifyContent: 'center',
                     flexDirection: 'row',
                     gap: 6,
-                    shadowColor: T.accent, 
-                    shadowOpacity: 0.2, 
-                    shadowRadius: 8, 
-                    elevation: 3 
+                    shadowColor: T.accent,
+                    shadowOpacity: 0.2,
+                    shadowRadius: 8,
+                    elevation: 3
                   }}
                 >
                   <Text style={{ color: '#fff', fontSize: 12, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1.5 }}>
@@ -322,10 +323,10 @@ const PickedSuccessView = React.memo(({ orders, riderLocation, onStartClosestDel
         </View>
       </ScrollView>
 
-      <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: 24, zIndex: 20 }}>
+      <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: 24, paddingBottom: Math.max(24, insets.bottom + 8), zIndex: 20 }}>
         <Pressable onPress={onContinue} style={{ width: '100%', height: 60, borderRadius: 20, backgroundColor: T.text, alignItems: 'center', justifyContent: 'center', shadowColor: T.text, shadowOpacity: 0.25, shadowRadius: 15, elevation: 8 }}>
           <Text style={{ color: T.bg, fontSize: 12, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 2.5 }}>
-            {orders.length > 1 
+            {orders.length > 1
               ? (lang === 'bn' ? 'ঠিক আছে' : 'OKAY')
               : (lang === 'bn' ? 'ডেলিভারি শুরু করুন' : 'Start Delivery Trip')}
           </Text>
@@ -337,15 +338,15 @@ const PickedSuccessView = React.memo(({ orders, riderLocation, onStartClosestDel
 
 const NextOrderTransitionView = React.memo(({ targetOrder, riderLocation, onStart }: { targetOrder: any, riderLocation: any, onStart: () => void }) => {
   const { T, lang, font } = useApp();
-  
+
   const distance = useMemo(() => {
     const custLoc = targetOrder?.customer?.location || targetOrder?.customer?.address;
     if (!riderLocation || !custLoc) return '--';
-    
+
     const lat = custLoc.lat ?? custLoc.latitude;
     const lng = custLoc.lng ?? custLoc.longitude;
     if (!lat || !lng) return '--';
-    
+
     const distMeters = calculateDistance(riderLocation.lat, riderLocation.lng, lat, lng);
     if (distMeters >= 1000) {
       return `${(distMeters / 1000).toFixed(1)} km`;
@@ -400,37 +401,37 @@ const NextOrderTransitionView = React.memo(({ targetOrder, riderLocation, onStar
 
       <View style={{ width: '100%', maxWidth: 360, flexDirection: 'row', gap: 12, alignItems: 'center' }}>
         {phone ? (
-          <Pressable 
-            onPress={() => Linking.openURL(`tel:${phone}`)} 
-            style={{ 
-              width: 64, 
-              height: 64, 
-              borderRadius: 20, 
-              backgroundColor: T.green || '#22c55e', 
-              alignItems: 'center', 
-              justifyContent: 'center', 
-              shadowColor: T.green || '#22c55e', 
-              shadowOpacity: 0.3, 
-              shadowRadius: 15, 
-              elevation: 8 
+          <Pressable
+            onPress={() => Linking.openURL(`tel:${phone}`)}
+            style={{
+              width: 64,
+              height: 64,
+              borderRadius: 20,
+              backgroundColor: T.green || '#22c55e',
+              alignItems: 'center',
+              justifyContent: 'center',
+              shadowColor: T.green || '#22c55e',
+              shadowOpacity: 0.3,
+              shadowRadius: 15,
+              elevation: 8
             }}
           >
             <Phone size={24} color="#fff" />
           </Pressable>
         ) : null}
-        <Pressable 
-          onPress={onStart} 
-          style={{ 
-            flex: 1, 
-            height: 64, 
-            borderRadius: 20, 
-            backgroundColor: T.accent, 
-            alignItems: 'center', 
-            justifyContent: 'center', 
-            shadowColor: T.accent, 
-            shadowOpacity: 0.3, 
-            shadowRadius: 15, 
-            elevation: 8 
+        <Pressable
+          onPress={onStart}
+          style={{
+            flex: 1,
+            height: 64,
+            borderRadius: 20,
+            backgroundColor: T.accent,
+            alignItems: 'center',
+            justifyContent: 'center',
+            shadowColor: T.accent,
+            shadowOpacity: 0.3,
+            shadowRadius: 15,
+            elevation: 8
           }}
         >
           <Text style={{ color: '#fff', fontSize: 14, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 2.5 }}>
@@ -447,13 +448,13 @@ const BatchOverviewDrawer = React.memo(({ liveOrders, currentIndex, setCurrentIn
   return (
     <Modal transparent animationType="fade" visible={true} onRequestClose={onClose}>
       <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)' }} onPress={onClose} />
-      <Animated.View 
+      <Animated.View
         entering={SlideInDown.springify().damping(20)}
-        style={{ 
-          position: 'absolute', bottom: 0, left: 0, right: 0, 
-          backgroundColor: T.surface, 
-          borderTopLeftRadius: 32, borderTopRightRadius: 32, 
-          paddingHorizontal: 20, paddingTop: 24, paddingBottom: 40, 
+        style={{
+          position: 'absolute', bottom: 0, left: 0, right: 0,
+          backgroundColor: T.surface,
+          borderTopLeftRadius: 32, borderTopRightRadius: 32,
+          paddingHorizontal: 20, paddingTop: 24, paddingBottom: 40,
           maxHeight: '85%',
           shadowColor: '#000', shadowOffset: { width: 0, height: -10 }, shadowOpacity: 0.3, shadowRadius: 20, elevation: 20
         }}
@@ -477,14 +478,14 @@ const BatchOverviewDrawer = React.memo(({ liveOrders, currentIndex, setCurrentIn
             const isActive = idx === currentIndex;
             const isPickup = o.status === 'accepted' || o.status === 'arrived_at_branch';
             return (
-              <Pressable 
-                key={o.id} 
+              <Pressable
+                key={o.id}
                 onPress={() => { setCurrentIndex(idx); onClose(); }}
-                style={{ 
-                  backgroundColor: isActive ? `${T.accent}08` : T.hi, 
-                  borderWidth: 1.5, 
-                  borderColor: isActive ? T.accent : T.border, 
-                  borderRadius: 20, padding: 16, 
+                style={{
+                  backgroundColor: isActive ? `${T.accent}08` : T.hi,
+                  borderWidth: 1.5,
+                  borderColor: isActive ? T.accent : T.border,
+                  borderRadius: 20, padding: 16,
                   flexDirection: 'row', gap: 14
                 }}
               >
@@ -514,7 +515,7 @@ const BatchOverviewDrawer = React.memo(({ liveOrders, currentIndex, setCurrentIn
                     {isPickup ? (o.branchDetail?.name || 'Branch') : (o.customer?.address || 'Customer Address')}
                   </Text>
                 </View>
-                
+
                 {isActive && (
                   <View style={{ alignSelf: 'center' }}>
                     <ChevronRight size={20} color={T.accent} />
@@ -646,15 +647,15 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
             const aLng = aLoc?.lng ?? aLoc?.longitude;
             const bLat = bLoc?.lat ?? bLoc?.latitude;
             const bLng = bLoc?.lng ?? bLoc?.longitude;
-            
+
             if (!aLat || !aLng) return 1;
             if (!bLat || !bLng) return -1;
-            
+
             const distA = calculateDistance(riderLocation.lat, riderLocation.lng, Number(aLat), Number(aLng));
             const distB = calculateDistance(riderLocation.lat, riderLocation.lng, Number(bLat), Number(bLng));
             return distA - distB;
           });
-          
+
           transitionPendingRef.current = true;
           setTransitionTargetOrder(sorted[0]);
         }
@@ -709,7 +710,7 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const [isUploading, setIsUploading] = useState(false);
   const [loadingAction, setLoadingAction] = useState(false);
-  
+
   const [isNavigating, setIsNavigatingState] = useState(false);
   const [followMode, setFollowMode] = useState(true);
   const [routeInfo, setRouteInfo] = useState({ distance: '--', duration: '--' });
@@ -756,10 +757,39 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
 
   const totalUnread = useMemo(() => Object.values(unreadCounts).reduce((a, b) => a + b, 0), [unreadCounts]);
 
+  // Unread messages listener for live orders
+  useEffect(() => {
+    if (!liveOrders || liveOrders.length === 0) {
+      setUnreadCounts({});
+      return;
+    }
+    
+    const unsubs: (() => void)[] = [];
+
+    liveOrders.forEach(o => {
+      const chatRef = dbRef(rtdb, RTDB_PATHS.chat(o.id));
+      const unsub = onValue(chatRef, (snap) => {
+        setUnreadCounts(prev => {
+          const next = { ...prev };
+          if (snap.exists()) {
+            const msgs = Object.values(snap.val() as any);
+            next[o.id] = msgs.filter((m: any) => m.senderRole === 'customer' && !m.read).length;
+          } else {
+            next[o.id] = 0;
+          }
+          return next;
+        });
+      });
+      unsubs.push(() => unsub());
+    });
+
+    return () => unsubs.forEach(u => u());
+  }, [liveOrders]);
+
   // 1. Optimized Listener (Single Listener for all orders)
   useEffect(() => {
     if (liveOrders.length === 0) return;
-    
+
     // Listen to all relevant orders in one go if a real Firestore batchId exists
     const bid = (batchId && typeof batchId === 'string' && !String(batchId).startsWith('pickup_'))
       ? batchId
@@ -768,7 +798,7 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
         : null;
 
     let unsubs: any[] = [];
-    
+
     if (bid) {
       // Real Firestore batchId — single query listener
       const q = query(collection(db, 'orders'), where('batchId', '==', bid));
@@ -871,7 +901,7 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
       if (!loc) return null;
       const lat = loc.lat ?? loc.latitude;
       const lng = loc.lng ?? loc.longitude;
-      return lat && lng ? { latitude: Number(lat), longitude: Number(lng) } : null;
+      return lat && lng ? { latitude: Number(lat), longitude: Number(lng), name: o.customer?.name } : null;
     }).filter(Boolean);
   }, [liveOrders]);
 
@@ -898,10 +928,10 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
       setLoadingAction(false);
       return onMinimize();
     }
-    
+
     if (flow.isReturn) {
-      try { 
-        await updateDoc(doc(db, 'orders', activeOrder.id), { status: 'returned', returnedAt: serverTimestamp(), updatedAt: serverTimestamp() }); 
+      try {
+        await updateDoc(doc(db, 'orders', activeOrder.id), { status: 'returned', returnedAt: serverTimestamp(), updatedAt: serverTimestamp() });
       } catch (e) {
         console.error(e);
       } finally {
@@ -909,7 +939,7 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
       }
       return;
     }
-    
+
     const startTime = Date.now();
     const ensureMinDelay = async () => {
       const elapsed = Date.now() - startTime;
@@ -938,12 +968,37 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
         if (currentStatus === 'arrived_at_branch') {
           setIsPicking(true);
           try {
+            // 1. Upload photos first
+            const uploadedUrls = await Promise.all(liveOrders.map(async (ord: any) => {
+              const photoData = pickupPhotos[ord.id];
+              const uri = photoData?.uri || photoData?.file?.uri || photoData?.previewUrl;
+              if (!uri) return { id: ord.id, url: '' };
+
+              try {
+                const response = await fetch(uri);
+                const blob = await response.blob();
+                const sRef = storageRef(storage, `pickup_proofs/${ord.id}.jpg`);
+                const uploadResult = await uploadBytes(sRef, blob);
+                const url = await getDownloadURL(uploadResult.ref);
+                return { id: ord.id, url };
+              } catch (err) {
+                console.error(`Upload failed for order ${ord.id}:`, err);
+                return { id: ord.id, url: '' };
+              }
+            }));
+
+            const urlMap = uploadedUrls.reduce((acc: any, item: any) => {
+              acc[item.id] = item.url;
+              return acc;
+            }, {});
+
             const batch = writeBatch(db);
-            // 1. Immediately update status for all orders to 'picked'
+            // 2. Update status and pickupProofImage for all orders
             liveOrders.forEach((ord: any) => {
-              batch.update(doc(db, 'orders', ord.id), { 
-                status: 'picked', 
-                pickedAt: serverTimestamp(), 
+              batch.update(doc(db, 'orders', ord.id), {
+                status: 'picked',
+                pickedAt: serverTimestamp(),
+                pickupProofImage: urlMap[ord.id] || '',
                 updatedAt: serverTimestamp(),
                 batchId: null,
               });
@@ -951,38 +1006,11 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
             await batch.commit();
             await ensureMinDelay();
 
-            // 2. Transition UI immediately
+            // 3. Transition UI
             setIsPicking(false);
             setIsPickedSuccess(true);
             setIsUploading(false); // No longer blocking
             showToast?.(t('toast_picked'), `#${activeOrder.id}`, 'order_status');
-
-            // 3. Background Photo Upload Lifecycle
-            (async () => {
-              try {
-                await Promise.all(liveOrders.map(async (ord: any) => {
-                  const photoData = pickupPhotos[ord.id];
-                  if (!photoData?.uri) return;
-
-                  try {
-                    const response = await fetch(photoData.uri);
-                    const blob = await response.blob();
-                    const sRef = storageRef(storage, `delivery_proofs/pickup_${ord.id}_${Date.now()}.jpg`);
-                    const uploadResult = await uploadBytes(sRef, blob);
-                    const url = await getDownloadURL(uploadResult.ref);
-
-                    await updateDoc(doc(db, 'orders', ord.id), {
-                      pickupProofImage: url,
-                      updatedAt: serverTimestamp()
-                    });
-                  } catch (err) {
-                    console.error(`Upload failed for order ${ord.id}:`, err);
-                  }
-                }));
-              } catch (bgErr) {
-                console.error("Background Pickup Upload Error:", bgErr);
-              }
-            })();
           } catch (err) {
             setIsPicking(false);
             console.error("Pickup Error:", err);
@@ -1019,8 +1047,8 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
       await updateDoc(doc(db, 'orders', activeOrder.id), { status: flow.next, [`${flow.next}At`]: serverTimestamp(), updatedAt: serverTimestamp() });
       setVisualStatus(flow.next);
       await ensureMinDelay();
-    } catch (e) { 
-      console.error(e); 
+    } catch (e) {
+      console.error(e);
     } finally {
       setLoadingAction(false);
     }
@@ -1074,8 +1102,8 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
     }
     if (isPickedSuccess) {
       return (
-        <PickedSuccessView 
-          orders={liveOrders} 
+        <PickedSuccessView
+          orders={liveOrders}
           riderLocation={riderLocation}
           onStartClosestDelivery={async (closestOrd: any) => {
             setIsPickedSuccess(false);
@@ -1089,12 +1117,12 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
             } catch (err) {
               console.error("Start closest delivery error:", err);
             }
-            
+
             // 2. Set activeBatchId in parent to this closest order's ID
             if (onActiveBatchChange) {
               onActiveBatchChange(closestOrd.id);
             }
-            
+
             // 3. Trigger transition to out_for_delivery UI in OrderExecution
             setLiveOrders([closestOrd]);
             setCurrentIndex(0);
@@ -1113,25 +1141,25 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
               }
               await handleAction();
             }
-          }} 
+          }}
         />
       );
     }
     if (contextLoading && initOrders.length === 0) {
-    return (
-      <View style={{ flex: 1, backgroundColor: T.bg, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator size="large" color={T.accent} />
-      </View>
-    );
-  }
+      return (
+        <View style={{ flex: 1, backgroundColor: T.bg, alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator size="large" color={T.accent} />
+        </View>
+      );
+    }
 
-  if (!activeOrder) return null;
+    if (!activeOrder) return null;
 
     const allCompleted = !transitionTargetOrder && !transitionPendingRef.current && liveOrders.every((o: any) => ['delivered', 'success', 'cancelled', 'rescheduled', 'skipped', 'returned'].includes(o.status));
-    const props = { 
-      order: activeOrder, 
-      riderLocation, 
-      batchOrders: liveOrders, 
+    const props = {
+      order: activeOrder,
+      riderLocation,
+      batchOrders: liveOrders,
       currentIndex,
       isNavigating,
       setIsNavigating,
@@ -1184,11 +1212,11 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
           {lang === 'bn' ? 'অর্ডারটি পাওয়া যায়নি' : 'Order Not Found'}
         </Text>
         <Text style={{ marginTop: 10, fontSize: 14, color: T.sub, textAlign: 'center', lineHeight: 20 }}>
-          {lang === 'bn' 
-            ? 'অর্ডারটি হয়তো বাতিল করা হয়েছে অথবা আপনার কাছে আর বরাদ্দ নেই।' 
+          {lang === 'bn'
+            ? 'অর্ডারটি হয়তো বাতিল করা হয়েছে অথবা আপনার কাছে আর বরাদ্দ নেই।'
             : 'The order might have been cancelled or is no longer assigned to you.'}
         </Text>
-        <Pressable 
+        <Pressable
           onPress={() => (onMinimize ? onMinimize() : router.back())}
           style={{ marginTop: 32, paddingVertical: 14, paddingHorizontal: 32, backgroundColor: T.accent, borderRadius: 14, elevation: 4 }}
         >
@@ -1222,17 +1250,79 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
       {/* MAP CONTROLS */}
       {isMapView && (
         <>
-          <Pressable onPress={() => (onMinimize ? onMinimize() : router.back())} style={{ position: 'absolute', top: hasNavHeader ? (insets.top + 90) : (insets.top + 10), right: 16, zIndex: 100, width: 40, height: 40, borderRadius: 13, backgroundColor: 'rgba(0,0,0,0.65)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)' }}>
-            <ChevronDown size={19} color="#fff" strokeWidth={2.5} />
-          </Pressable>
-          {isBatchMode && (
-            <Pressable onPress={() => setShowOverviewDrawer(true)} style={{ position: 'absolute', top: hasNavHeader ? (insets.top + 90) : (insets.top + 10), left: 16, zIndex: 100, borderRadius: 13, backgroundColor: 'rgba(0,0,0,0.65)', flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6, paddingHorizontal: 14, borderWidth: 1, borderColor: `${T.accent}66` }}>
-              <ListOrdered size={16} color={T.accent} />
-              <Text style={{ fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1.5, color: '#fff' }}>
-                {lang === 'bn' ? `ডেলিভারি ${currentIndex + 1}/${initialBatchSize.current}` : `Drop ${currentIndex + 1}/${initialBatchSize.current}`}
-              </Text>
-              <ChevronDown size={14} color="rgba(255,255,255,0.6)" strokeWidth={2.5} />
-            </Pressable>
+          {hasNavHeader ? (
+            <>
+              <Pressable onPress={() => (onMinimize ? onMinimize() : router.back())} style={{ position: 'absolute', top: insets.top + 90, right: 16, zIndex: 100, width: 40, height: 40, borderRadius: 13, backgroundColor: 'rgba(0,0,0,0.65)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)' }}>
+                <ChevronDown size={19} color="#fff" strokeWidth={2.5} />
+              </Pressable>
+              {isBatchMode && (
+                <Pressable onPress={() => setShowOverviewDrawer(true)} style={{ position: 'absolute', top: insets.top + 90, left: 16, zIndex: 100, borderRadius: 13, backgroundColor: 'rgba(0,0,0,0.65)', flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6, paddingHorizontal: 14, borderWidth: 1, borderColor: `${T.accent}66` }}>
+                  <ListOrdered size={16} color={T.accent} />
+                  <Text style={{ fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1.5, color: '#fff' }}>
+                    {lang === 'bn' ? `ডেলিভারি ${currentIndex + 1}/${initialBatchSize.current}` : `Drop ${currentIndex + 1}/${initialBatchSize.current}`}
+                  </Text>
+                  <ChevronDown size={14} color="rgba(255,255,255,0.6)" strokeWidth={2.5} />
+                </Pressable>
+              )}
+            </>
+          ) : (
+            <Animated.View entering={FadeInUp.duration(400)} style={{
+              position: 'absolute',
+              top: insets.top + 10,
+              left: 16, right: 16,
+              zIndex: 100,
+            }}>
+              <View style={{
+                backgroundColor: isDark ? 'rgba(30,30,45,0.95)' : 'rgba(255,255,255,0.95)',
+                borderWidth: 1,
+                borderColor: T.border,
+                borderRadius: 20,
+                paddingVertical: 14,
+                paddingHorizontal: 20,
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                shadowColor: '#000',
+                shadowOpacity: 0.15,
+                shadowRadius: 15,
+                elevation: 8
+              }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 9, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1.5, color: T.accent, marginBottom: 4 }}>
+                    {lang === 'bn' ? 'মোট দূরত্ব' : 'TOTAL DISTANCE'}
+                  </Text>
+                  <Text style={{ fontSize: 22, fontWeight: '900', color: T.text }}>
+                    {routeInfo?.distance || '--'}
+                  </Text>
+                </View>
+
+                <View style={{ width: 1, height: 34, backgroundColor: T.border, marginHorizontal: 16 }} />
+
+                <View style={{ flex: 1, alignItems: 'center' }}>
+                  <Text style={{ fontSize: 9, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1.5, color: isDark ? '#9ca3af' : '#6b7280', marginBottom: 4 }}>
+                    {lang === 'bn' ? 'আনুমানিক সময়' : 'EST. TIME'}
+                  </Text>
+                  <Text style={{ fontSize: 22, fontWeight: '900', color: T.text }}>
+                    {routeInfo?.duration || '--'}
+                  </Text>
+                </View>
+
+                <View style={{ width: 1, height: 34, backgroundColor: T.border, marginHorizontal: 16 }} />
+
+                <Pressable onPress={() => (onMinimize ? onMinimize() : router.back())} style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)', alignItems: 'center', justifyContent: 'center' }}>
+                  <X size={20} color={T.text} strokeWidth={2.5} />
+                </Pressable>
+              </View>
+              {isBatchMode && (
+                <Pressable onPress={() => setShowOverviewDrawer(true)} style={{ alignSelf: 'flex-start', marginTop: 12, borderRadius: 13, backgroundColor: 'rgba(0,0,0,0.65)', flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6, paddingHorizontal: 14, borderWidth: 1, borderColor: `${T.accent}66` }}>
+                  <ListOrdered size={16} color={T.accent} />
+                  <Text style={{ fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1.5, color: '#fff' }}>
+                    {lang === 'bn' ? `ডেলিভারি ${currentIndex + 1}/${initialBatchSize.current}` : `Drop ${currentIndex + 1}/${initialBatchSize.current}`}
+                  </Text>
+                  <ChevronDown size={14} color="rgba(255,255,255,0.6)" strokeWidth={2.5} />
+                </Pressable>
+              )}
+            </Animated.View>
           )}
         </>
       )}
@@ -1251,10 +1341,11 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
               lang={lang}
               isDark={isDark}
               onRouteReady={setRouteInfo}
+              onMapInteraction={() => setMapTouchTime(Date.now())}
             />
           ) : (
-            <RouteOverviewMap 
-              assignedOrders={liveOrders} 
+            <RouteOverviewMap
+              assignedOrders={liveOrders}
               branches={branches}
               minimal={true}
               routeOrigin={riderLocation ? { latitude: riderLocation.lat, longitude: riderLocation.lng } : undefined}
@@ -1275,9 +1366,9 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
         </View>
       )}
 
-      <Animated.View 
-        key={currentIndex} 
-        entering={FadeInRight.duration(400)} 
+      <Animated.View
+        key={currentIndex}
+        entering={FadeInRight.duration(400)}
         exiting={FadeOutLeft.duration(300)}
         style={{ flex: 1, overflow: 'hidden' }}
         pointerEvents="box-none"
@@ -1287,9 +1378,9 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
 
       {/* ACTION FOOTER */}
       {!isPicking && !flow.finished && !isPickedSuccess && !transitionTargetOrder && (
-        <Animated.View 
+        <Animated.View
           layout={LinearTransition.springify().damping(25).stiffness(200)}
-          style={{ position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 80, padding: 16, paddingBottom: 24, flexDirection: 'row', gap: 10, backgroundColor: isMapView ? 'transparent' : T.bg, borderTopWidth: 0 }}
+          style={{ position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 80, padding: 16, paddingBottom: Math.max(24, insets.bottom + 8), flexDirection: 'row', gap: 10, backgroundColor: isMapView ? 'transparent' : T.bg, borderTopWidth: 0 }}
         >
           {['picked', 'out_for_delivery', 'arrived_at_customer'].includes(currentStatus) && (
             <Pressable onPress={() => setShowReturnModal(true)} style={{ width: 58, height: 58, borderRadius: 17, backgroundColor: 'rgba(249,115,22,0.08)', borderWidth: 1, borderColor: 'rgba(249,115,22,0.25)', alignItems: 'center', justifyContent: 'center' }}>
@@ -1304,18 +1395,18 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
           {currentStatus !== 'assigned' && (
             <Pressable onPress={() => setIsChatOpen(true)} style={{ width: 58, height: 58, borderRadius: 17, backgroundColor: surfHi, borderWidth: 1, borderColor: T.border, alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
               <MessageSquare size={21} color={T.text} strokeWidth={2} />
-              <UnreadBadge count={unreadCounts[activeOrder?.id] || 0} bg={T.bg} />
+              <UnreadBadge count={totalUnread} bg={surfHi} />
             </Pressable>
           )}
           {(() => {
             return (
               <Animated.View style={[{ flex: 1, height: 58, borderRadius: 17, shadowColor: flow.grad, shadowOpacity: (isButtonDisabled || loadingAction) ? 0 : 0.3, shadowRadius: 12, elevation: 6, overflow: 'hidden' }, animatedButtonStyle]}>
-                <Pressable 
-                  disabled={isButtonDisabled || loadingAction} 
-                  onPress={() => handleAction()} 
+                <Pressable
+                  disabled={isButtonDisabled || loadingAction}
+                  onPress={() => handleAction()}
                   style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, opacity: (isButtonDisabled || loadingAction) ? 0.8 : 1 }}
                 >
-                  <Animated.View 
+                  <Animated.View
                     key={flow.textKey + isButtonDisabled + loadingAction}
                     entering={FadeIn.duration(400)}
                     style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 }}
@@ -1361,22 +1452,22 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
             <Text style={{ fontSize: 14, color: T.sub, textAlign: 'center', lineHeight: 22, marginBottom: 32 }}>
               {lang === 'bn' ? 'আপনি কি নিশ্চিত যে আপনি এই অর্ডারটি গ্রহণ করবেন না? একবার বাতিল করলে এটি আর ফিরে পাওয়া যাবে না।' : 'Are you sure you want to reject this delivery? This action cannot be undone and the order will be reassigned.'}
             </Text>
-            
+
             <View style={{ width: '100%', gap: 12 }}>
-              <Pressable 
+              <Pressable
                 onPress={() => {
                   setShowCancelConfirm(false);
                   handleAction(true);
-                }} 
+                }}
                 style={{ width: '100%', height: 60, borderRadius: 18, backgroundColor: '#ef4444', alignItems: 'center', justifyContent: 'center', shadowColor: '#ef4444', shadowOpacity: 0.3, shadowRadius: 10, elevation: 5 }}
               >
                 <Text style={{ color: '#fff', fontSize: 13, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1.5 }}>
                   {lang === 'bn' ? 'হ্যাঁ, বাতিল করুন' : 'Yes, Reject Order'}
                 </Text>
               </Pressable>
-              
-              <Pressable 
-                onPress={() => setShowCancelConfirm(false)} 
+
+              <Pressable
+                onPress={() => setShowCancelConfirm(false)}
                 style={{ width: '100%', height: 60, borderRadius: 18, backgroundColor: T.surface, borderWidth: 1, borderColor: T.border, alignItems: 'center', justifyContent: 'center' }}
               >
                 <Text style={{ color: T.text, fontSize: 13, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1.5 }}>
@@ -1393,10 +1484,10 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
       )}
 
       {/* CHAT WINDOW */}
-      <ChatWindow 
-        visible={isChatOpen} 
-        order={activeOrder} 
-        onClose={() => setIsChatOpen(false)} 
+      <ChatWindow
+        visible={isChatOpen}
+        order={activeOrder}
+        onClose={() => setIsChatOpen(false)}
       />
 
 
@@ -1425,7 +1516,7 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
               // Seamlessly calculate and trigger transition directly from the completed order to the next nearest one
               const DONE = ['delivered', 'success', 'cancelled', 'rescheduled', 'skipped', 'returned'];
               const nextIncomplete = liveOrders.find((o: any) => o.id !== deliveredOrder.id && !DONE.includes(o.status));
-              
+
               if (nextIncomplete) {
                 transitionPendingRef.current = true;
                 setTransitionTargetOrder(nextIncomplete);
@@ -1440,15 +1531,15 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
                     const aLng = aLoc?.lng ?? aLoc?.longitude;
                     const bLat = bLoc?.lat ?? bLoc?.latitude;
                     const bLng = bLoc?.lng ?? bLoc?.longitude;
-                    
+
                     if (!aLat || !aLng) return 1;
                     if (!bLat || !bLng) return -1;
-                    
+
                     const distA = calculateDistance(riderLocation.lat, riderLocation.lng, Number(aLat), Number(aLng));
                     const distB = calculateDistance(riderLocation.lat, riderLocation.lng, Number(bLat), Number(bLng));
                     return distA - distB;
                   });
-                  
+
                   transitionPendingRef.current = true;
                   setTransitionTargetOrder(sorted[0]);
                 }

@@ -20,6 +20,7 @@ interface SimpleOverviewMapProps {
   lang: string;
   isDark: boolean;
   onRouteReady?: (info: any) => void;
+  onMapInteraction?: () => void;
 }
 
 export default React.memo(function SimpleOverviewMap({
@@ -32,7 +33,8 @@ export default React.memo(function SimpleOverviewMap({
   T,
   lang,
   isDark,
-  onRouteReady
+  onRouteReady,
+  onMapInteraction
 }: SimpleOverviewMapProps) {
   const mapRef = useRef<MapView>(null);
 
@@ -115,6 +117,9 @@ export default React.memo(function SimpleOverviewMap({
         ref={mapRef}
         provider={PROVIDER_GOOGLE}
         style={styles.map}
+        onTouchStart={onMapInteraction}
+        onPanDrag={onMapInteraction}
+        onPress={onMapInteraction}
         showsUserLocation={true} // Natively show blue dot for rider's real-time position
         showsMyLocationButton={false}
         showsScale={false}
@@ -143,12 +148,13 @@ export default React.memo(function SimpleOverviewMap({
         )}
 
         {/* CUSTOMER DESTINATION MARKERS (Show in both assigned and accepted overview stages) */}
-        {resolvedCustomerCoords.map((dest, i) => (
+        {resolvedCustomerCoords.map((dest: any, i: number) => (
           <OrderMarker
             key={`drop-${i}`}
             pos={{ lat: dest.latitude, lng: dest.longitude }}
             color={T.green}
             label={`${i + 1}`}
+            customerName={dest.name}
             isSelected={true}
             isNear={false}
             onClick={() => {}}
@@ -163,7 +169,7 @@ export default React.memo(function SimpleOverviewMap({
             waypoints={waypoints}
             apikey={GOOGLE_API_KEY}
             strokeWidth={5}
-            strokeColor={!isAccepted ? T.green : accentColor}
+            strokeColor="#3b82f6"
             mode="DRIVING"
             optimizeWaypoints={false}
             precision="high"

@@ -24,7 +24,7 @@ interface UseChatReturn {
   updateRiderTyping: (isTyping: boolean) => void;
 }
 
-export function useChat(orderId: string | null, riderId: string | null): UseChatReturn {
+export function useChat(orderId: string | null, riderId: string | null, markAsRead: boolean = true): UseChatReturn {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [customerTyping, setCustomerTyping] = useState(false);
   const [sending, setSending] = useState(false);
@@ -57,21 +57,25 @@ export function useChat(orderId: string | null, riderId: string | null): UseChat
       if (CACHE_KEY) {
         AsyncStorage.setItem(CACHE_KEY, JSON.stringify(msgs.slice(-100))).catch(() => {});
       }
-
-      // Mark as read logic
-      const updates: any = {};
-      msgs.forEach((m: any) => {
-        if (m.senderRole === 'customer' && m.read === false) {
-          updates[`${RTDB_PATHS.chat(orderId)}/${m.id}/read`] = true;
-        }
-      });
-      if (Object.keys(updates).length > 0) {
-        update(ref(rtdb), updates).catch(e => console.error('[useChat] update read error:', e));
-      }
     });
 
     return () => off(msgRef, 'value', unsub as any);
   }, [orderId]);
+
+  // Mark as read logic
+  useEffect(() => {
+    if (!orderId || !markAsRead || messages.length === 0) return;
+    
+    const updates: any = {};
+    messages.forEach((m: any) => {
+      if (m.senderRole === 'customer' && m.read === false) {
+        updates[`${RTDB_PATHS.chat(orderId)}/${m.id}/read`] = true;
+      }
+    });
+    if (Object.keys(updates).length > 0) {
+      update(ref(rtdb), updates).catch(e => console.error('[useChat] update read error:', e));
+    }
+  }, [orderId, markAsRead, messages]);
 
   // Customer typing listener
   useEffect(() => {

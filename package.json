@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "expo-router/entry",
   "scripts": {
-    "start": "expo start",
+    "start": "cross-env NODE_OPTIONS=--dns-result-order=ipv4first expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
     "build:android": "eas build --platform android",
@@ -57,6 +57,7 @@
     "@babel/core": "^7.25.0",
     "@types/react": "~19.1.10",
     "babel-preset-expo": "~54.0.10",
+    "cross-env": "^10.1.0",
     "typescript": "^5.3.3"
   }
 }

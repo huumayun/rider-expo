@@ -4,11 +4,13 @@ import { db } from '../../config/firebase';
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { X, AlertTriangle, FileText, ChevronRight } from 'lucide-react-native';
 import { useApp } from '../../context/AppContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function CancelOrderModal({ order, onClose, onComplete, visible }: any) {
   const { T, lang, theme, font } = useApp();
+  const insets = useSafeAreaInsets();
   const [reason, setReason] = useState('cancelled'); // 'cancelled', 'rescheduled', 'skipped'
   const [note, setNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -80,7 +82,7 @@ export default function CancelOrderModal({ order, onClose, onComplete, visible }
     <Modal visible={visible} transparent animationType="fade" onRequestClose={closeAnim}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' }}>
-          <Animated.View style={{ width: '100%', backgroundColor: surf, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: Platform.OS === 'ios' ? 40 : 24, transform: [{ translateY }] }}>
+          <Animated.View style={{ width: '100%', backgroundColor: surf, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: Math.max(24, insets.bottom + 12), transform: [{ translateY }] }}>
             
             <View {...panResponder.panHandlers} style={{ alignItems: 'center', paddingBottom: 16 }}>
               <View style={{ width: 44, height: 5, borderRadius: 99, backgroundColor: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)' }} />

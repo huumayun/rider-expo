@@ -11,6 +11,8 @@ interface UIState {
   setIsExecuting: (val: boolean) => void;
   hideBottomNav: boolean;
   setHideBottomNav: (val: boolean) => void;
+  isOrderSheetOpen: boolean;
+  setIsOrderSheetOpen: (val: boolean) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -24,4 +26,6 @@ export const useUIStore = create<UIState>((set) => ({
   setIsExecuting: (val) => set({ isExecuting: val }),
   hideBottomNav: false,
   setHideBottomNav: (val) => set({ hideBottomNav: val }),
+  isOrderSheetOpen: false,
+  setIsOrderSheetOpen: (val) => set({ isOrderSheetOpen: val }),
 }));

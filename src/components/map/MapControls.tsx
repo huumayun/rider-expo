@@ -116,7 +116,7 @@ const styles = StyleSheet.create({
   headerInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 4 },
   searchBtn: { flex: 1, height: 46, borderRadius: 14, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, marginRight: 10 },
   controlBtn: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center' },
-  recenterWrap: { position: 'absolute', bottom: 420, right: 16, zIndex: 95 },
+  recenterWrap: { position: 'absolute', bottom: 420, left: 16, zIndex: 95 },
   recenterBtn: { height: 46, borderRadius: 23, paddingHorizontal: 16, overflow: 'hidden', borderWidth: 1, shadowColor: '#000', shadowOpacity: 0.4, shadowRadius: 15, elevation: 12 },
   recenterInner: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   mapControls: { position: 'absolute', bottom: 380, right: 16, gap: 12, zIndex: 90 },

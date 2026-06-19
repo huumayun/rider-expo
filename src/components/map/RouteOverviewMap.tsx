@@ -66,6 +66,9 @@ const LiveSpeedometer = React.memo(() => {
     }
   }, [isSpeeding]);
 
+  const isOrderSheetOpen = useUIStore(s => s.isOrderSheetOpen);
+  if (isOrderSheetOpen) return null;
+
   return (
     <View style={{
       position: 'absolute',
@@ -550,6 +553,7 @@ function RouteOverviewMap({
             pos={{ lat: dest.latitude, lng: dest.longitude }}
             color={T.green}
             label={`${i + 1}`}
+            customerName={dest.name}
             isSelected={true}
             isNear={false}
             onClick={() => { }}
@@ -594,6 +598,7 @@ function RouteOverviewMap({
                   pos={target}
                   color={color}
                   label={batch.length > 1 ? `x${batch.length}` : p.id}
+                  customerName={p.customer?.name}
                   isSelected={isSelected}
                   isNear={p.batchId || p.id === closestBatchId}
                   isNew={p.status === 'assigned' ? labels.newTag[lang] : null}
@@ -606,6 +611,7 @@ function RouteOverviewMap({
                   pos={customerLoc}
                   color={T.green}
                   label={lang === 'bn' ? 'ড্রপ' : 'Drop'}
+                  customerName={p.customer?.name}
                   isSelected={true}
                   isNear={false}
                   onClick={() => { }}
@@ -632,7 +638,7 @@ function RouteOverviewMap({
             const val = Math.abs(Math.sin(lat * 1000 + lng * 1000));
             if (val < 0.12) return '#ef4444'; // Red (heavy traffic)
             if (val < 0.3) return '#f97316';  // Orange (moderate traffic)
-            return '#22c55e';                 // Green (clear flow)
+            return '#3b82f6';                 // Blue (clear flow)
           };
 
           // Segment coordinates into chunks of identical traffic color to avoid rendering lag

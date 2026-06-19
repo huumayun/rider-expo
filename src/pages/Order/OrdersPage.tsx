@@ -509,13 +509,12 @@ export default function OrdersPage() {
             </View>
             <View style={{ flexDirection: 'row', gap: 6 }}>
               {tab === 'active' && batch.length === 1 && (
-                <Pressable
-                  onPress={() => onChatPress(primaryOrder)}
-                  style={({ pressed }) => [{ width: 28, height: 28, borderRadius: 8, backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center', position: 'relative' }, pressed && { opacity: 0.7 }]}
+                <View
+                  style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center', position: 'relative' }}
                 >
                   <MessageSquare size={13} color={T.sub} strokeWidth={2} />
                   <UnreadBadge orderId={primaryOrder.id} bg={isDark ? '#1e293b' : '#f8fafc'} />
-                </Pressable>
+                </View>
               )}
               <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: `${ss.color}15`, alignItems: 'center', justifyContent: 'center' }}>
                 {ss.icon === 'nav' ? (
