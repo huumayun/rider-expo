@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "main": "expo-router/entry",
   "scripts": {
-    "start": "cross-env NODE_OPTIONS=--dns-result-order=ipv4first expo start",
+    "start": "cross-env NODE_OPTIONS=--dns-result-order=ipv4first EXPO_NO_DEPENDENCY_VALIDATION=1 expo start --no-dev",
+    "start:dev": "cross-env NODE_OPTIONS=--dns-result-order=ipv4first EXPO_NO_DEPENDENCY_VALIDATION=1 expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
     "build:android": "eas build --platform android",

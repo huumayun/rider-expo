@@ -80,6 +80,22 @@ export default function DeliveryConfirmation({ order, onComplete, onCancel, hasN
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isResending, setIsResending] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [resendCount, setResendCount] = useState(0);
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setResendCooldown(prev => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [resendCooldown]);
 
   const pulseAnim = useRef(new RNAnimated.Value(1)).current;
 
@@ -92,6 +108,8 @@ export default function DeliveryConfirmation({ order, onComplete, onCancel, hasN
       setOtpInput('');
       setPreviewUrl(null);
       setError('');
+      setResendCount(0);
+      setResendCooldown(0);
     }
   }, [visible, order]);
 
@@ -143,12 +161,21 @@ export default function DeliveryConfirmation({ order, onComplete, onCancel, hasN
   }, [otpInput, step, order.id]);
 
   const handleResendOTP = async () => {
+    if (resendCooldown > 0 || isResending) return;
     setIsResending(true);
     try {
       const newOTP = generateOTP();
       await updateDoc(doc(db, 'orders', order.id), { deliveryOTP: newOTP, updatedAt: serverTimestamp() });
       setOtpInput('');
       setError('');
+
+      // Cooldown strategy: 1st resend = 15s, 2nd = 30s, 3rd+ = 60s
+      let nextCooldown = 15;
+      if (resendCount === 1) nextCooldown = 30;
+      else if (resendCount >= 2) nextCooldown = 60;
+
+      setResendCooldown(nextCooldown);
+      setResendCount(prev => prev + 1);
     } catch (err) {
       setError(lang === 'bn' ? 'ওটিপি পাঠাতে সমস্যা হয়েছে' : 'Failed to resend OTP');
     } finally { setIsResending(false); }
@@ -388,9 +415,26 @@ export default function DeliveryConfirmation({ order, onComplete, onCancel, hasN
                         </View>
                       ) : null}
 
-                      <Pressable onPress={handleResendOTP} disabled={isResending} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 8 }}>
-                        <RefreshCw size={14} color={T.accent} strokeWidth={2.5} />
-                        <Text style={{ fontSize: 11, fontWeight: '800', color: T.accent, textTransform: 'uppercase', letterSpacing: 1 }}>{isResending ? '...' : (lang === 'bn' ? 'কোড আবার পাঠান' : 'Resend Code')}</Text>
+                      <Pressable 
+                        onPress={handleResendOTP} 
+                        disabled={isResending || resendCooldown > 0} 
+                        style={{ 
+                          flexDirection: 'row', 
+                          alignItems: 'center', 
+                          justifyContent: 'center', 
+                          gap: 8, 
+                          paddingVertical: 8,
+                          opacity: (isResending || resendCooldown > 0) ? 0.5 : 1
+                        }}
+                      >
+                        <RefreshCw size={14} color={T.accent} strokeWidth={2.5} style={{ opacity: isResending ? 0.5 : 1 }} />
+                        <Text style={{ fontSize: 11, fontWeight: '800', color: T.accent, textTransform: 'uppercase', letterSpacing: 1 }}>
+                          {isResending 
+                            ? '...' 
+                            : resendCooldown > 0 
+                              ? (lang === 'bn' ? `অপেক্ষা করুন (${resendCooldown} সেকেন্ড)` : `Wait (${resendCooldown}s)`)
+                              : (lang === 'bn' ? 'কোড আবার পাঠান' : 'Resend Code')}
+                        </Text>
                       </Pressable>
 
                       <Pressable onPress={() => setStep(3)} disabled={isSubmitting || otpInput.length < 4} style={{ width: '100%', height: 58, borderRadius: 18, backgroundColor: otpInput.length === 4 ? T.accent : T.border, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 10 }}>

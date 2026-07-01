@@ -545,6 +545,8 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
       if (filtered.length > 0) return filtered;
     }
 
+    if (batchOrders && batchOrders.length === 0) return [];
+
     return contextActiveOrders;
   }, [batchOrders, order, contextActiveOrders, batchId]);
 
@@ -676,28 +678,36 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
     return initOrders.some((o: any) => o.status === 'picked');
   });
 
+  const orderStatusesString = useMemo(() => 
+    initOrders.map((o: any) => `${o.id}_${o.status}`).sort().join(','),
+    [initOrders]
+  );
+
   useEffect(() => {
     if (isPickedSuccess) return; // Freeze liveOrders while success screen is shown
     if (initOrders.length > 0) {
       setLiveOrders(prev => {
         if (prev.length === 0) return initOrders;
 
-        // If the new list of IDs has absolutely no overlap with existing ones,
-        // it means we switched to a completely different batch, so reset.
-        const prevIds = new Set(prev.map(o => o.id));
-        const hasOverlap = initOrders.some((o: any) => prevIds.has(o.id));
-        if (!hasOverlap) return initOrders;
+        // 1. Update existing orders with new data from initOrders
+        const updatedPrev = prev.map(p => {
+          const match = initOrders.find((o: any) => o.id === p.id);
+          if (match) {
+            if (p.status !== match.status || p.updatedAt?.seconds !== match.updatedAt?.seconds) {
+              return match;
+            }
+          }
+          return p;
+        });
 
-        // Otherwise, only append new orders and retain all others to prevent removing completed ones.
-        const hasNewOrders = initOrders.some((o: any) => !prevIds.has(o.id));
-        if (hasNewOrders) {
-          const newOrders = initOrders.filter((o: any) => !prevIds.has(o.id));
-          return [...prev, ...newOrders];
-        }
-        return prev;
+        // 2. Append any new orders that are in initOrders but not in prev
+        const prevIds = new Set(prev.map(o => o.id));
+        const newOrders = initOrders.filter((o: any) => !prevIds.has(o.id));
+        
+        return [...updatedPrev, ...newOrders];
       });
     }
-  }, [orderIdsString, isPickedSuccess]);
+  }, [orderStatusesString, isPickedSuccess]);
 
   const [otpOrder, setOtpOrder] = useState<any>(null);
   const [showReturnModal, setShowReturnModal] = useState(false);
@@ -706,7 +716,8 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
   const [isPicking, setIsPicking] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [pickupPhotos, setPickupPhotos] = useState<any>({});
-  const [isVerified, setIsVerified] = useState(false);
+  const [branchCheckedItems, setBranchCheckedItems] = useState<any>({});
+  const [branchPhoto, setBranchPhoto] = useState<any>(null);
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const [isUploading, setIsUploading] = useState(false);
   const [loadingAction, setLoadingAction] = useState(false);
@@ -739,10 +750,10 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
   const currentStatus = visualStatus || activeOrder?.status || 'delivered';
 
   useEffect(() => {
-    if (activeOrder?.status && (!loadingAction || !visualStatus)) {
+    if (activeOrder?.status) {
       setVisualStatus(activeOrder.status);
     }
-  }, [activeOrder?.id, activeOrder?.status, loadingAction]);
+  }, [activeOrder?.id, activeOrder?.status]);
 
   useEffect(() => {
     if (!isPickedSuccess && ['go_to_branch', 'picked', 'out_for_delivery'].includes(currentStatus)) {
@@ -911,8 +922,18 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
   const isMapView = !isPicking && ['assigned', 'accepted', 'go_to_branch', 'picked', 'out_for_delivery'].includes(currentStatus);
   const hasNavHeader = ['go_to_branch', 'picked', 'out_for_delivery'].includes(currentStatus);
 
-  const allPhotosTaken = useMemo(() => (liveOrders || []).every((o: any) => !!pickupPhotos[o.id]), [liveOrders, pickupPhotos]);
-  const isButtonDisabled = (currentStatus === 'arrived_at_branch') && (!isVerified || !allPhotosTaken);
+  const allPhotosTaken = useMemo(() => Object.keys(pickupPhotos).length > 0, [pickupPhotos]);
+  const isAllItemsVerified = useMemo(() => {
+    const activeOrders = (liveOrders || []).filter((o: any) =>
+      !['delivered', 'cancelled', 'returned', 'success', 'skipped'].includes(o.status)
+    );
+    const allItems: Array<{orderId: string, localIdx: number}> = [];
+    activeOrders.forEach((ord: any) => {
+      if (ord.items) ord.items.forEach((_: any, idx: number) => allItems.push({ orderId: ord.id, localIdx: idx }));
+    });
+    return allItems.length > 0 && allItems.every(item => !!branchCheckedItems[`${item.orderId}-${item.localIdx}`]);
+  }, [liveOrders, branchCheckedItems]);
+  const isButtonDisabled = (currentStatus === 'arrived_at_branch') && (!isAllItemsVerified || !allPhotosTaken);
 
   const buttonScale = useSharedValue(1);
   const animatedButtonStyle = useAnimatedStyle(() => ({
@@ -1068,6 +1089,27 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
   };
 
   const renderCurrentStep = () => {
+    if (isPicking) {
+      return (
+        <View style={{ flex: 1, backgroundColor: T.bg, alignItems: 'center', justifyContent: 'center', gap: 24, padding: 32 }}>
+          <View style={{
+            width: 100, height: 100, borderRadius: 32,
+            backgroundColor: `${T.accent}12`, borderWidth: 2, borderColor: `${T.accent}30`,
+            alignItems: 'center', justifyContent: 'center'
+          }}>
+            <ActivityIndicator size="large" color={T.accent} />
+          </View>
+          <View style={{ alignItems: 'center', gap: 8 }}>
+            <Text style={{ fontFamily: font, fontSize: 22, fontWeight: '900', color: T.text, textAlign: 'center' }}>
+              {lang === 'bn' ? 'পার্সেল প্রসেসিং হচ্ছে...' : 'Processing Parcels...'}
+            </Text>
+            <Text style={{ fontSize: 13, color: T.sub, textAlign: 'center', fontWeight: '600', lineHeight: 18 }}>
+              {lang === 'bn' ? 'তথ্য ও ছবি আপলোড করা হচ্ছে, দয়া করে অপেক্ষা করুন।' : 'Uploading data and photos, please wait.'}
+            </Text>
+          </View>
+        </View>
+      );
+    }
     if (transitionTargetOrder) {
       return (
         <NextOrderTransitionView
@@ -1182,7 +1224,7 @@ export default function OrderExecution({ batchOrders = [], order = null, onMinim
       case 'assigned': return <GoToBranchView {...props} isAccepted={false} orderStatus="assigned" />;
       case 'accepted': return <GoToBranchView {...props} isAccepted={true} orderStatus="accepted" />;
       case 'go_to_branch': return <GoToBranchView {...props} isAccepted={true} orderStatus="go_to_branch" />;
-      case 'arrived_at_branch': return <ArrivedAtBranchView {...props} onPhotosChange={setPickupPhotos} onVerificationStatusChange={setIsVerified} />;
+      case 'arrived_at_branch': return <ArrivedAtBranchView {...props} onPhotosChange={setPickupPhotos} checkedItems={branchCheckedItems} onCheckedItemsChange={setBranchCheckedItems} batchPhoto={branchPhoto} onBatchPhotoChange={setBranchPhoto} />;
       case 'picked':
       case 'out_for_delivery': return <GoToCustomerView {...props} batchOrders={[activeOrder]} orderStatus={currentStatus} onCancelRequest={() => setShowReturnModal(true)} />;
       case 'arrived_at_customer': return <ArrivedAtCustomerView {...props} batchOrders={[activeOrder]} onCancelRequest={() => setShowReturnModal(true)} />;
